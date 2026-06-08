@@ -12,3 +12,7 @@ wheels/
 .env.*
 __pycache__/
 .venv/
+.terraform/
+terraform/.terraform/
+*.tfstate
+*.tfstate.backup
