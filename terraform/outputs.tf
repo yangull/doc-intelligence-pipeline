@@ -17,3 +17,12 @@ output "dynamodb_table_arn" {
   description = "ARN of the DynamoDB table"
   value       = aws_dynamodb_table.documents.arn
 }
+output "sqs_queue_url" {
+  description = "URL of the document processing SQS queue"
+  value       = aws_sqs_queue.documents.url
+}
+
+output "sqs_queue_arn" {
+  description = "ARN of the document processing SQS queue"
+  value       = aws_sqs_queue.documents.arn
+}

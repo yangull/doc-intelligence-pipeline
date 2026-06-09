@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     s3_bucket_name: str = "doc-intelligence-documents-dev"
     dynamodb_table_name: str = "doc-intelligence-documents-dev"
     bedrock_model_id: str = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    sqs_queue_url: str = "https://sqs.eu-west-1.amazonaws.com/549116506173/doc-intelligence-documents-dev"
 
 
 settings = Settings()
