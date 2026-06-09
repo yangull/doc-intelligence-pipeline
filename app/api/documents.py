@@ -3,71 +3,55 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.core.config import settings
-from app.core.aws_clients import get_s3_client, get_dynamodb_resource
+from app.core.aws_clients import get_s3_client, get_dynamodb_resource, get_bedrock_agent_runtime_client
 
-# APIRouter is like a mini-app — groups related endpoints together
-# We'll register this router in main.py
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-
-# --- Request/Response models ---
-
 class UploadRequest(BaseModel):
-    filename: str      # e.g. "invoice_january.pdf"
-    content_type: str  # e.g. "application/pdf"
-
+    filename: str
+    content_type: str
 
 class UploadResponse(BaseModel):
-    document_id: str   # unique ID we generate
-    upload_url: str    # the presigned S3 URL the browser uploads to
-    expires_in: int    # seconds until the URL expires
-
+    document_id: str
+    upload_url: str
+    expires_in: int
 
 class DocumentStatus(BaseModel):
     document_id: str
-    status: str        # PENDING, PROCESSING, COMPLETED, FAILED
+    status: str
     filename: str
     created_at: str
 
+class QueryRequest(BaseModel):
+    question: str
 
-# --- Endpoints ---
+class QuerySource(BaseModel):
+    document_id: str
+    excerpt: str
+
+class QueryResponse(BaseModel):
+    answer: str
+    sources: list[QuerySource]
 
 @router.post("/upload", response_model=UploadResponse)
 async def create_upload_url(request: UploadRequest):
-    """
-    Step 1 of upload flow.
-    Browser calls this to get a presigned URL.
-    Browser then uploads the file directly to S3 using that URL.
-    Our server never touches the file bytes.
-    """
-    # Generate a unique ID for this document
     document_id = str(uuid.uuid4())
-
-    # The S3 key (path inside the bucket) for this file
-    # e.g. "uploads/abc-123/invoice.pdf"
     s3_key = f"uploads/{document_id}/{request.filename}"
-
-    # Generate the presigned URL
-    # This URL lets anyone PUT a file to S3 for the next 3600 seconds
     s3_client = get_s3_client()
     upload_url = s3_client.generate_presigned_url(
-        "put_object",                          # HTTP method S3 expects
+        "put_object",
         Params={
             "Bucket": settings.s3_bucket_name,
             "Key": s3_key,
             "ContentType": request.content_type,
         },
-        ExpiresIn=3600,                        # URL valid for 1 hour
+        ExpiresIn=3600,
     )
-
-    # Save document metadata to DynamoDB immediately
-    # Status starts as PENDING — worker will update it
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table_name)
-
     table.put_item(Item={
-        "PK": f"DOC#{document_id}",   # partition key
-        "SK": "METADATA",              # sort key
+        "PK": f"DOC#{document_id}",
+        "SK": "METADATA",
         "document_id": document_id,
         "filename": request.filename,
         "s3_key": s3_key,
@@ -75,37 +59,37 @@ async def create_upload_url(request: UploadRequest):
         "created_at": datetime.now(timezone.utc).isoformat(),
         "content_type": request.content_type,
     })
-
-    return UploadResponse(
-        document_id=document_id,
-        upload_url=upload_url,
-        expires_in=3600,
-    )
-
+    return UploadResponse(document_id=document_id, upload_url=upload_url, expires_in=3600)
 
 @router.get("/{document_id}/status", response_model=DocumentStatus)
 async def get_document_status(document_id: str):
-    """
-    Poll this endpoint to check if processing is done.
-    Returns the current status: PENDING, PROCESSING, COMPLETED, FAILED
-    """
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table_name)
-
-    # Fetch the item from DynamoDB using PK + SK
-    response = table.get_item(Key={
-        "PK": f"DOC#{document_id}",
-        "SK": "METADATA",
-    })
-
-    # If no item found, document doesn't exist
+    response = table.get_item(Key={"PK": f"DOC#{document_id}", "SK": "METADATA"})
     item = response.get("Item")
     if not item:
         raise HTTPException(status_code=404, detail="Document not found")
+    return DocumentStatus(document_id=item["document_id"], status=item["status"], filename=item["filename"], created_at=item["created_at"])
 
-    return DocumentStatus(
-        document_id=item["document_id"],
-        status=item["status"],
-        filename=item["filename"],
-        created_at=item["created_at"],
+@router.post("/query", response_model=QueryResponse)
+async def query_documents(request: QueryRequest):
+    client = get_bedrock_agent_runtime_client()
+    response = client.retrieve_and_generate(
+        input={"text": request.question},
+        retrieveAndGenerateConfiguration={
+            "type": "KNOWLEDGE_BASE",
+            "knowledgeBaseConfiguration": {
+                "knowledgeBaseId": settings.bedrock_kb_id,
+                "modelArn": "arn:aws:bedrock:eu-west-1:549116506173:inference-profile/eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            },
+        },
     )
+    answer = response["output"]["text"]
+    sources = []
+    for citation in response.get("citations", []):
+        for reference in citation.get("retrievedReferences", []):
+            s3_key = reference["location"]["s3Location"]["uri"]
+            parts = s3_key.split("/")
+            doc_id = parts[2] if len(parts) >= 3 else "unknown"
+            sources.append(QuerySource(document_id=doc_id, excerpt=reference["content"]["text"][:300]))
+    return QueryResponse(answer=answer, sources=sources)

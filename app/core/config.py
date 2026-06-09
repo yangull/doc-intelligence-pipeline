@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     dynamodb_table_name: str = "doc-intelligence-documents-dev"
     bedrock_model_id: str = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
     sqs_queue_url: str = "https://sqs.eu-west-1.amazonaws.com/549116506173/doc-intelligence-documents-dev"
+    bedrock_kb_id: str = "GTW9CRTHWL"
+    bedrock_kb_data_source_id: str = "PPSRC9SMY5"
 
 
 settings = Settings()

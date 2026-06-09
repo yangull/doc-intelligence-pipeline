@@ -3,7 +3,8 @@ import boto3
 from decimal import Decimal
 from datetime import datetime, timezone
 from app.core.config import settings
-from app.core.aws_clients import get_s3_client, get_dynamodb_resource, get_bedrock_client
+from app.core.aws_clients import get_s3_client, get_dynamodb_resource, get_bedrock_client, get_bedrock_agent_client
+
 
 EXTRACTION_PROMPT = """You are a document intelligence assistant. Analyze the provided document and extract structured information from it.
 
@@ -106,7 +107,7 @@ def save_extraction_to_dynamodb(document_id: str, extraction_result: dict):
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table_name)
     extracted_data = extraction_result["extracted_data"]
-    doc_type = extracted_data.get("doc_type", "unknown")
+    doc_type = extracted_data.get("document_type", "unknown")
 
     # DynamoDB doesn't support float — convert all floats to Decimal
     extraction_str = json.dumps(extracted_data)
@@ -126,6 +127,17 @@ def save_extraction_to_dynamodb(document_id: str, extraction_result: dict):
     return doc_type
 
 
+def trigger_kb_ingestion():
+    bedrock_agent = get_bedrock_agent_client()
+    response = bedrock_agent.start_ingestion_job(
+        knowledgeBaseId=settings.bedrock_kb_id,
+        dataSourceId=settings.bedrock_kb_data_source_id,
+    )
+    job_id = response["ingestionJob"]["ingestionJobId"]
+    print(f"KB ingestion job started: {job_id}")
+    return job_id
+
+
 def process_document(document_id: str, s3_key: str, filename: str):
     print(f"Processing document {document_id}: {filename}")
     try:
@@ -141,6 +153,7 @@ def process_document(document_id: str, s3_key: str, filename: str):
 
         doc_type = save_extraction_to_dynamodb(document_id, extraction_result)
         print(f"Saved extraction to DynamoDB. Document type: {doc_type}")
+        trigger_kb_ingestion()
 
         update_document_status(document_id, "COMPLETED")
         print(f"Document {document_id} processing complete")

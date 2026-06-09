@@ -1,88 +1,125 @@
-from pydantic import BaseModel, Field
-from typing import Optional, Union
-from enum import Enum
+import uuid
+from datetime import datetime, timezone
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from app.core.config import settings
+from app.core.aws_clients import get_s3_client, get_dynamodb_resource, get_bedrock_agent_runtime_client
 
+router = APIRouter(prefix="/documents", tags=["documents"])
 
-class DocumentType(str, Enum):
-    """The types of documents our system can process."""
-    INVOICE = "invoice"
-    CONTRACT = "contract"
-    RECEIPT = "receipt"
-    UNKNOWN = "unknown"
+# --- Request/Response models ---
+class UploadRequest(BaseModel):
+    filename: str
+    content_type: str
 
-
-class DocumentStatus(str, Enum):
-    """Processing states a document moves through."""
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-
-
-class InvoiceExtraction(BaseModel):
-    doc_type: str = "invoice"
-    invoice_number: Optional[str] = None
-    vendor_name: Optional[str] = None
-    vendor_address: Optional[str] = None
-    customer_name: Optional[str] = None
-    invoice_date: Optional[str] = None
-    due_date: Optional[str] = None
-    subtotal: Optional[float] = None
-    tax_amount: Optional[float] = None
-    total_amount: Optional[float] = None
-    currency: Optional[str] = None
-    line_items: list[dict] = Field(default_factory=list)
-    payment_terms: Optional[str] = None
-
-
-class ContractExtraction(BaseModel):
-    doc_type: str = "contract"
-    contract_title: Optional[str] = None
-    parties: list[str] = Field(default_factory=list)
-    effective_date: Optional[str] = None
-    expiration_date: Optional[str] = None
-    contract_value: Optional[float] = None
-    currency: Optional[str] = None
-    governing_law: Optional[str] = None
-    key_obligations: list[str] = Field(default_factory=list)
-    termination_conditions: Optional[str] = None
-
-
-class ReceiptExtraction(BaseModel):
-    doc_type: str = "receipt"
-    merchant_name: Optional[str] = None
-    merchant_address: Optional[str] = None
-    transaction_date: Optional[str] = None
-    transaction_time: Optional[str] = None
-    items: list[dict] = Field(default_factory=list)
-    subtotal: Optional[float] = None
-    tax_amount: Optional[float] = None
-    total_amount: Optional[float] = None
-    currency: Optional[str] = None
-    payment_method: Optional[str] = None
-
-
-class UnknownExtraction(BaseModel):
-    doc_type: str = "unknown"
-    summary: Optional[str] = None
-    key_information: list[str] = Field(default_factory=list)
-
-
-# Union type — Claude returns ONE of these depending on document type
-DocumentExtraction = Union[
-    InvoiceExtraction,
-    ContractExtraction,
-    ReceiptExtraction,
-    UnknownExtraction,
-]
-
-
-class ExtractionResult(BaseModel):
-    """The complete result saved to DynamoDB after processing."""
+class UploadResponse(BaseModel):
     document_id: str
-    document_type: str
-    extraction: dict
-    confidence: float = Field(ge=0.0, le=1.0)
-    model_id: str
-    input_tokens: int
-    output_tokens: int
+    upload_url: str
+    expires_in: int
+
+class DocumentStatus(BaseModel):
+    document_id: str
+    status: str
+    filename: str
+    created_at: str
+
+class QueryRequest(BaseModel):
+    question: str
+
+class QuerySource(BaseModel):
+    document_id: str
+    excerpt: str
+
+class QueryResponse(BaseModel):
+    answer: str
+    sources: list[QuerySource]
+
+# --- Endpoints ---
+@router.post("/upload", response_model=UploadResponse)
+async def create_upload_url(request: UploadRequest):
+    document_id = str(uuid.uuid4())
+    s3_key = f"uploads/{document_id}/{request.filename}"
+
+    s3_client = get_s3_client()
+    upload_url = s3_client.generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": settings.s3_bucket_name,
+            "Key": s3_key,
+            "ContentType": request.content_type,
+        },
+        ExpiresIn=3600,
+    )
+
+    dynamodb = get_dynamodb_resource()
+    table = dynamodb.Table(settings.dynamodb_table_name)
+    table.put_item(Item={
+        "PK": f"DOC#{document_id}",
+        "SK": "METADATA",
+        "document_id": document_id,
+        "filename": request.filename,
+        "s3_key": s3_key,
+        "status": "PENDING",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "content_type": request.content_type,
+    })
+
+    return UploadResponse(
+        document_id=document_id,
+        upload_url=upload_url,
+        expires_in=3600,
+    )
+
+
+@router.get("/{document_id}/status", response_model=DocumentStatus)
+async def get_document_status(document_id: str):
+    dynamodb = get_dynamodb_resource()
+    table = dynamodb.Table(settings.dynamodb_table_name)
+
+    response = table.get_item(Key={
+        "PK": f"DOC#{document_id}",
+        "SK": "METADATA",
+    })
+
+    item = response.get("Item")
+    if not item:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    return DocumentStatus(
+        document_id=item["document_id"],
+        status=item["status"],
+        filename=item["filename"],
+        created_at=item["created_at"],
+    )
+
+
+@router.post("/query", response_model=QueryResponse)
+async def query_documents(request: QueryRequest):
+    client = get_bedrock_agent_runtime_client()
+
+    response = client.retrieve_and_generate(
+        input={"text": request.question},
+        retrieveAndGenerateConfiguration={
+            "type": "KNOWLEDGE_BASE",
+            "knowledgeBaseConfiguration": {
+                "knowledgeBaseId": settings.bedrock_kb_id,
+                "modelArn": f"arn:aws:bedrock:eu-west-1::foundation-model/{settings.bedrock_model_id}",
+            },
+        },
+    )
+
+    answer = response["output"]["text"]
+
+    sources = []
+    citations = response.get("citations", [])
+    for citation in citations:
+        for reference in citation.get("retrievedReferences", []):
+            s3_key = reference["location"]["s3Location"]["uri"]
+            parts = s3_key.split("/")
+            document_id = parts[2] if len(parts) >= 3 else "unknown"
+            sources.append(QuerySource(
+                document_id=document_id,
+                excerpt=reference["content"]["text"][:300],
+            ))
+
+    return QueryResponse(answer=answer, sources=sources)

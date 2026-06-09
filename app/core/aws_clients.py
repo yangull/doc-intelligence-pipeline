@@ -49,3 +49,27 @@ def get_dynamodb_resource():
         "dynamodb",
         region_name=settings.aws_region,
     )
+
+@lru_cache(maxsize=1)
+def get_bedrock_agent_client():
+    """Returns a reusable Bedrock Agent client.
+    
+    bedrock-agent is for managing Knowledge Bases (ingestion jobs, data sources).
+    This is different from bedrock-runtime which is for calling models.
+    """
+    return boto3.client(
+        "bedrock-agent",
+        region_name=settings.aws_region,
+    )
+
+@lru_cache(maxsize=1)
+def get_bedrock_agent_runtime_client():
+    """Returns a reusable Bedrock Agent Runtime client.
+    
+    bedrock-agent-runtime is for QUERYING Knowledge Bases.
+    This is different from bedrock-agent which manages them.
+    """
+    return boto3.client(
+        "bedrock-agent-runtime",
+        region_name=settings.aws_region,
+    )

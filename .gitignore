@@ -16,3 +16,5 @@ __pycache__/
 terraform/.terraform/
 *.tfstate
 *.tfstate.backup
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup

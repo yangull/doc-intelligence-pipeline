@@ -60,6 +60,7 @@ resource "aws_dynamodb_table" "documents" {
   # Delete table when terraform destroy is run
   deletion_protection_enabled = false
 }
+
 # ============================================
 # SQS QUEUE - buffers document processing jobs
 # ============================================
@@ -131,4 +132,141 @@ resource "aws_cloudwatch_event_target" "new_document_sqs" {
   rule      = aws_cloudwatch_event_rule.new_document.name
   target_id = "SendToSQS"
   arn       = aws_sqs_queue.documents.arn
+}
+
+# ============================================
+# IAM ROLE - lets Bedrock access our resources
+# ============================================
+
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_role" "bedrock_kb" {
+  name = "${var.project_name}-bedrock-kb-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "bedrock.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+      Condition = {
+        StringEquals = {
+          "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "bedrock_kb" {
+  name = "${var.project_name}-bedrock-kb-policy-${var.environment}"
+  role = aws_iam_role.bedrock_kb.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3ReadDocuments"
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [
+          aws_s3_bucket.documents.arn,
+          "${aws_s3_bucket.documents.arn}/*"
+        ]
+      },
+      {
+        Sid    = "UseEmbeddingModel"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel"]
+        Resource = [
+          "arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0"
+        ]
+      },
+      {
+        Sid    = "S3VectorsReadWrite"
+        Effect = "Allow"
+        Action = [
+          "s3vectors:CreateIndex",
+          "s3vectors:DeleteIndex",
+          "s3vectors:GetIndex",
+          "s3vectors:ListIndexes",
+          "s3vectors:PutVectors",
+          "s3vectors:GetVectors",
+          "s3vectors:DeleteVectors",
+          "s3vectors:QueryVectors",
+          "s3vectors:ListVectors"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ============================================
+# S3 VECTORS - stores our document embeddings
+# ============================================
+
+# The vector bucket is the container — like an S3 bucket but for embeddings
+resource "aws_s3vectors_vector_bucket" "kb" {
+  vector_bucket_name = "${var.project_name}-vectors-${var.environment}"
+}
+
+# The index is the searchable collection inside the bucket.
+# dimension=1024 must match Titan Embed Text v2 exactly.
+# cosine distance measures similarity between vectors.
+resource "aws_s3vectors_index" "kb" {
+  vector_bucket_name = aws_s3vectors_vector_bucket.kb.vector_bucket_name
+  index_name         = "doc-intelligence-index-dev"
+  data_type          = "float32"
+  dimension          = 1024
+  distance_metric    = "cosine"
+}
+
+# ============================================
+# BEDROCK KNOWLEDGE BASE
+# ============================================
+
+resource "aws_bedrockagent_knowledge_base" "documents" {
+  name     = "${var.project_name}-kb-${var.environment}"
+  role_arn = aws_iam_role.bedrock_kb.arn
+
+  knowledge_base_configuration {
+    type = "VECTOR"
+    vector_knowledge_base_configuration {
+      embedding_model_arn = "arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0"
+    }
+  }
+
+  storage_configuration {
+    type = "S3_VECTORS"
+    s3_vectors_configuration {
+      vector_bucket_arn = "arn:aws:s3vectors:eu-west-1:${data.aws_caller_identity.current.account_id}:bucket/${aws_s3vectors_vector_bucket.kb.vector_bucket_name}"
+      index_name        = "doc-intelligence-index-dev"
+    }
+  }
+
+  depends_on = [aws_iam_role_policy.bedrock_kb, aws_s3vectors_index.kb]
+}
+
+resource "aws_bedrockagent_data_source" "documents" {
+  knowledge_base_id = aws_bedrockagent_knowledge_base.documents.id
+  name              = "${var.project_name}-datasource-${var.environment}"
+
+  data_source_configuration {
+    type = "S3"
+    s3_configuration {
+      bucket_arn         = aws_s3_bucket.documents.arn
+      inclusion_prefixes = ["uploads/"]
+    }
+  }
+
+  vector_ingestion_configuration {
+    chunking_configuration {
+      chunking_strategy = "FIXED_SIZE"
+      fixed_size_chunking_configuration {
+        max_tokens         = 512
+        overlap_percentage = 20
+      }
+    }
+  }
 }
