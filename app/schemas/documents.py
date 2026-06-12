@@ -3,11 +3,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.core.config import settings
-from app.core.aws_clients import get_s3_client, get_dynamodb_resource, get_bedrock_agent_runtime_client
+from app.core.aws_clients import get_s3_client, get_dynamodb_resource
+from app.pipeline.query_graph import run_query_pipeline  # LangGraph pipeline replaces raw retrieve_and_generate
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# --- Request/Response models ---
+# --- Request / Response schemas ---
+
 class UploadRequest(BaseModel):
     filename: str
     content_type: str
@@ -15,11 +17,11 @@ class UploadRequest(BaseModel):
 class UploadResponse(BaseModel):
     document_id: str
     upload_url: str
-    expires_in: int
+    expires_in: int  # seconds until the presigned URL expires
 
 class DocumentStatus(BaseModel):
     document_id: str
-    status: str
+    status: str      # PENDING → PROCESSING → COMPLETED / FAILED
     filename: str
     created_at: str
 
@@ -28,19 +30,21 @@ class QueryRequest(BaseModel):
 
 class QuerySource(BaseModel):
     document_id: str
-    excerpt: str
+    excerpt: str     # first 300 chars of the retrieved chunk
 
 class QueryResponse(BaseModel):
     answer: str
     sources: list[QuerySource]
 
 # --- Endpoints ---
+
 @router.post("/upload", response_model=UploadResponse)
 async def create_upload_url(request: UploadRequest):
     document_id = str(uuid.uuid4())
     s3_key = f"uploads/{document_id}/{request.filename}"
-
     s3_client = get_s3_client()
+
+    # Presigned URL lets the client upload directly to S3 — no data passes through our API
     upload_url = s3_client.generate_presigned_url(
         "put_object",
         Params={
@@ -51,6 +55,7 @@ async def create_upload_url(request: UploadRequest):
         ExpiresIn=3600,
     )
 
+    # Save a PENDING record so we can track processing status
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table_name)
     table.put_item(Item={
@@ -63,28 +68,17 @@ async def create_upload_url(request: UploadRequest):
         "created_at": datetime.now(timezone.utc).isoformat(),
         "content_type": request.content_type,
     })
-
-    return UploadResponse(
-        document_id=document_id,
-        upload_url=upload_url,
-        expires_in=3600,
-    )
+    return UploadResponse(document_id=document_id, upload_url=upload_url, expires_in=3600)
 
 
 @router.get("/{document_id}/status", response_model=DocumentStatus)
 async def get_document_status(document_id: str):
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table_name)
-
-    response = table.get_item(Key={
-        "PK": f"DOC#{document_id}",
-        "SK": "METADATA",
-    })
-
+    response = table.get_item(Key={"PK": f"DOC#{document_id}", "SK": "METADATA"})
     item = response.get("Item")
     if not item:
         raise HTTPException(status_code=404, detail="Document not found")
-
     return DocumentStatus(
         document_id=item["document_id"],
         status=item["status"],
@@ -95,31 +89,18 @@ async def get_document_status(document_id: str):
 
 @router.post("/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
-    client = get_bedrock_agent_runtime_client()
-
-    response = client.retrieve_and_generate(
-        input={"text": request.question},
-        retrieveAndGenerateConfiguration={
-            "type": "KNOWLEDGE_BASE",
-            "knowledgeBaseConfiguration": {
-                "knowledgeBaseId": settings.bedrock_kb_id,
-                "modelArn": f"arn:aws:bedrock:eu-west-1::foundation-model/{settings.bedrock_model_id}",
-            },
-        },
-    )
-
-    answer = response["output"]["text"]
+    # Runs: query_rewriter → retriever → generator, with Langfuse tracing on each node
+    result = run_query_pipeline(request.question)
 
     sources = []
-    citations = response.get("citations", [])
-    for citation in citations:
-        for reference in citation.get("retrievedReferences", []):
-            s3_key = reference["location"]["s3Location"]["uri"]
-            parts = s3_key.split("/")
-            document_id = parts[2] if len(parts) >= 3 else "unknown"
-            sources.append(QuerySource(
-                document_id=document_id,
-                excerpt=reference["content"]["text"][:300],
-            ))
+    for i, chunk in enumerate(result["retrieved_chunks"]):
+        uri = chunk.get("source", "")
+        parts = uri.split("/")
+        # S3 URI format: s3://bucket/uploads/{doc_id}/filename → doc_id is at index 4
+        doc_id = parts[4] if len(parts) >= 5 else f"source-{i}"
+        sources.append(QuerySource(
+            document_id=doc_id,
+            excerpt=chunk["text"][:300],
+        ))
 
-    return QueryResponse(answer=answer, sources=sources)
+    return QueryResponse(answer=result["answer"], sources=sources)

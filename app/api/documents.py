@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.core.config import settings
-from app.core.aws_clients import get_s3_client, get_dynamodb_resource, get_bedrock_agent_runtime_client
+from app.core.aws_clients import get_s3_client, get_dynamodb_resource
+from app.pipeline.query_graph import run_query_pipeline
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -69,27 +70,26 @@ async def get_document_status(document_id: str):
     item = response.get("Item")
     if not item:
         raise HTTPException(status_code=404, detail="Document not found")
-    return DocumentStatus(document_id=item["document_id"], status=item["status"], filename=item["filename"], created_at=item["created_at"])
+    return DocumentStatus(
+        document_id=item["document_id"],
+        status=item["status"],
+        filename=item["filename"],
+        created_at=item["created_at"],
+    )
 
 @router.post("/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
-    client = get_bedrock_agent_runtime_client()
-    response = client.retrieve_and_generate(
-        input={"text": request.question},
-        retrieveAndGenerateConfiguration={
-            "type": "KNOWLEDGE_BASE",
-            "knowledgeBaseConfiguration": {
-                "knowledgeBaseId": settings.bedrock_kb_id,
-                "modelArn": "arn:aws:bedrock:eu-west-1:549116506173:inference-profile/eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
-            },
-        },
-    )
-    answer = response["output"]["text"]
+    result = run_query_pipeline(request.question)  # root trace wraps all nodes
+
     sources = []
-    for citation in response.get("citations", []):
-        for reference in citation.get("retrievedReferences", []):
-            s3_key = reference["location"]["s3Location"]["uri"]
-            parts = s3_key.split("/")
-            doc_id = parts[2] if len(parts) >= 3 else "unknown"
-            sources.append(QuerySource(document_id=doc_id, excerpt=reference["content"]["text"][:300]))
-    return QueryResponse(answer=answer, sources=sources)
+    for i, chunk in enumerate(result["retrieved_chunks"]):
+        uri = chunk.get("source", "")
+        parts = uri.split("/")
+        # S3 URI format: s3://bucket/uploads/{doc_id}/filename
+        doc_id = parts[4] if len(parts) >= 5 else f"source-{i}"
+        sources.append(QuerySource(
+            document_id=doc_id,
+            excerpt=chunk["text"][:300],
+        ))
+
+    return QueryResponse(answer=result["answer"], sources=sources)

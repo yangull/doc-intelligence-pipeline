@@ -19,5 +19,9 @@ class Settings(BaseSettings):
     bedrock_kb_id: str = "GTW9CRTHWL"
     bedrock_kb_data_source_id: str = "PPSRC9SMY5"
 
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+
 
 settings = Settings()
