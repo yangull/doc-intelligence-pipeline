@@ -1,0 +1,29 @@
+# Python caches and compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Local virtualenv — deps get reinstalled inside the image, don't copy it in
+.venv/
+
+# Secrets — NEVER bake these into an image
+.env
+
+# Git internals
+.git/
+.gitignore
+
+# Terraform — infra code doesn't belong in the app image, and tfstate has sensitive ARNs
+terraform/
+
+# Tests and local test fixtures
+tests/
+test-invoice.pdf
+
+# Docker files themselves
+Dockerfile
+.dockerignore
+
+# Editor/OS noise
+.vscode/
+.DS_Store

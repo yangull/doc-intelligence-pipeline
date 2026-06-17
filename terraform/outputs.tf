@@ -36,3 +36,7 @@ output "data_source_id" {
   description = "Bedrock Knowledge Base Data Source ID"
   value       = aws_bedrockagent_data_source.documents.data_source_id
 }
+output "ecr_repository_url" {
+  description = "URL of the ECR repository (used to tag and push images)"
+  value       = aws_ecr_repository.app.repository_url
+}
