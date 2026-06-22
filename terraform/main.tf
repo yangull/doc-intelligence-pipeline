@@ -577,3 +577,97 @@ resource "aws_ecs_service" "app" {
     assign_public_ip = true # no ALB — the task itself gets a public IP
   }
 }
+# ============================================
+# GITHUB ACTIONS OIDC - lets CI deploy without stored AWS keys
+# ============================================
+
+# Register GitHub as a trusted OIDC identity provider.
+# AWS will accept short-lived tokens issued by GitHub Actions.
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  # GitHub's OIDC thumbprint; AWS now validates via its trust store,
+  # but the provider still requires this field.
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+}
+
+# The role GitHub Actions assumes to deploy. Trusted ONLY by our repo.
+resource "aws_iam_role" "github_deploy" {
+  name = "${var.project_name}-github-deploy-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        # Token audience must be AWS STS
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
+        # Token MUST come from our specific repo (any branch). This is the
+        # critical lock: no other GitHub repo can assume this role.
+        StringLike = {
+          "token.actions.githubusercontent.com:sub" = "repo:yangull/doc-intelligence-pipeline:*"
+        }
+      }
+    }]
+  })
+}
+
+# Permissions for the deploy role: push images to ECR + update ECS.
+resource "aws_iam_role_policy" "github_deploy" {
+  name = "${var.project_name}-github-deploy-policy-${var.environment}"
+  role = aws_iam_role.github_deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # Get an ECR auth token (needed before any push)
+        Sid      = "ECRAuth"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*" # this specific action doesn't support resource scoping
+      },
+      {
+        # Push/pull image layers to OUR repo only
+        Sid    = "ECRPushPull"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload"
+        ]
+        Resource = aws_ecr_repository.app.arn
+      },
+      {
+        # Trigger a new ECS deployment + read service/task state
+        Sid    = "ECSDeploy"
+        Effect = "Allow"
+        Action = [
+          "ecs:UpdateService",
+          "ecs:DescribeServices",
+          "ecs:DescribeTaskDefinition",
+          "ecs:RegisterTaskDefinition"
+        ]
+        Resource = "*" # ECS deploy actions are awkward to scope; fine for portfolio
+      },
+      {
+        # Allow passing the task + execution roles to ECS during deploy
+        Sid    = "PassRoles"
+        Effect = "Allow"
+        Action = ["iam:PassRole"]
+        Resource = [
+          aws_iam_role.ecs_execution.arn,
+          aws_iam_role.apprunner_instance.arn
+        ]
+      }
+    ]
+  })
+}
