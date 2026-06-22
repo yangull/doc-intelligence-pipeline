@@ -88,7 +88,7 @@ def run_worker():
                 # Parse the message to get document details
                 doc_details = parse_sqs_message(message)
 
-                if doc_details:
+                if doc_details and doc_details["filename"].endswith(".pdf"):
                     # Process the document
                     success = process_document(
                         document_id=doc_details["document_id"],
@@ -109,7 +109,7 @@ def run_worker():
                         # After 3 failures it goes to the DLQ
                         print(f"Processing failed — message will be retried")
                 else:
-                    # Bad message format — delete it so it doesn't block the queue
+                    # Bad message format or non-PDF file — delete it so it doesn't block the queue
                     sqs_client.delete_message(
                         QueueUrl=settings.sqs_queue_url,
                         ReceiptHandle=receipt_handle,

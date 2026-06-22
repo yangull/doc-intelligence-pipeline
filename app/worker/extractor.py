@@ -127,7 +127,23 @@ def save_extraction_to_dynamodb(document_id: str, extraction_result: dict):
     return doc_type
 
 
-def trigger_kb_ingestion():
+def write_kb_metadata(document_id: str, s3_key: str, extracted_data: dict):
+    s3_client = get_s3_client()
+    slim_meta = {"document_id": document_id}
+    metadata = {
+        "metadataAttributes": slim_meta
+    }
+    s3_client.put_object(
+        Bucket=settings.s3_bucket_name,
+        Key=s3_key + ".metadata.json",
+        Body=json.dumps(metadata),
+        ContentType="application/json",
+    )
+    print(f"Wrote KB metadata to {s3_key}.metadata.json")
+
+
+def trigger_kb_ingestion(document_id: str, s3_key: str, extracted_data: dict):
+    write_kb_metadata(document_id, s3_key, extracted_data)
     bedrock_agent = get_bedrock_agent_client()
     response = bedrock_agent.start_ingestion_job(
         knowledgeBaseId=settings.bedrock_kb_id,
@@ -153,7 +169,7 @@ def process_document(document_id: str, s3_key: str, filename: str):
 
         doc_type = save_extraction_to_dynamodb(document_id, extraction_result)
         print(f"Saved extraction to DynamoDB. Document type: {doc_type}")
-        trigger_kb_ingestion()
+        trigger_kb_ingestion(document_id, s3_key, extraction_result["extracted_data"])
 
         update_document_status(document_id, "COMPLETED")
         print(f"Document {document_id} processing complete")
