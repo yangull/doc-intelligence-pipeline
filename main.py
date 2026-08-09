@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.documents import router as documents_router
 from app.core.config import settings
+from app.core.logging import setup_logging
+
+setup_logging()
 
 # Create the FastAPI app
 app = FastAPI(
@@ -10,12 +13,13 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS middleware — allows browsers from any origin to call this API
-# In production you'd restrict this to your frontend's domain
+# CORS_ALLOW_ORIGINS is a comma-separated list of allowed frontend origins;
+# unset means wildcard, which browsers only accept without credentials
+cors_origins = settings.cors_origins or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=cors_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -1,12 +1,23 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from app.core.config import settings
 from app.core.aws_clients import get_s3_client, get_dynamodb_resource
 from app.pipeline.query_graph import run_query_pipeline
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+
+def require_api_key(x_api_key: str = Header(default="")):
+    # Auth is off when API_KEY is unset (local development)
+    if settings.api_key and x_api_key != settings.api_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+router = APIRouter(
+    prefix="/documents",
+    tags=["documents"],
+    dependencies=[Depends(require_api_key)],
+)
 
 class UploadRequest(BaseModel):
     filename: str
@@ -34,8 +45,11 @@ class QueryResponse(BaseModel):
     answer: str
     sources: list[QuerySource]
 
+# Handlers are plain `def` on purpose: boto3 and the query pipeline are
+# blocking, so FastAPI runs these in a threadpool instead of stalling the
+# event loop
 @router.post("/upload", response_model=UploadResponse)
-async def create_upload_url(request: UploadRequest):
+def create_upload_url(request: UploadRequest):
     document_id = str(uuid.uuid4())
     s3_key = f"uploads/{document_id}/{request.filename}"
     s3_client = get_s3_client()
@@ -63,7 +77,7 @@ async def create_upload_url(request: UploadRequest):
     return UploadResponse(document_id=document_id, upload_url=upload_url, expires_in=3600)
 
 @router.get("/{document_id}/status", response_model=DocumentStatus)
-async def get_document_status(document_id: str):
+def get_document_status(document_id: str):
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table_name)
     response = table.get_item(Key={"PK": f"DOC#{document_id}", "SK": "METADATA"})
@@ -78,7 +92,7 @@ async def get_document_status(document_id: str):
     )
 
 @router.post("/query", response_model=QueryResponse)
-async def query_documents(request: QueryRequest):
+def query_documents(request: QueryRequest):
     result = run_query_pipeline(request.question)  # root trace wraps all nodes
 
     sources = []

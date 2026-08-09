@@ -1,23 +1,73 @@
 import json
-import boto3
+import logging
 from decimal import Decimal
 from datetime import datetime, timezone
+from botocore.exceptions import BotoCoreError, ClientError
 from app.core.config import settings
 from app.core.aws_clients import get_s3_client, get_dynamodb_resource, get_bedrock_client, get_bedrock_agent_client
 
+logger = logging.getLogger(__name__)
 
-EXTRACTION_PROMPT = """You are a document intelligence assistant. Analyze the provided document and extract structured information from it.
+
+EXTRACTION_PROMPT = """You are a document intelligence assistant. Analyze the provided document.
 
 First, identify the document type:
 - invoice: a bill for goods or services
-- contract: a legal agreement between parties  
+- contract: a legal agreement between parties
 - receipt: proof of a purchase transaction
 - unknown: anything else
 
-Then extract all relevant fields based on the document type.
+Then record the document type and all relevant fields using the record_extraction tool."""
 
-You must respond with valid JSON only. No explanation, no markdown, no extra text.
-Just the raw JSON object."""
+# Forced tool use gives schema-validated JSON — no markdown fences to strip
+EXTRACTION_TOOL_CONFIG = {
+    "tools": [
+        {
+            "toolSpec": {
+                "name": "record_extraction",
+                "description": "Record structured data extracted from a document.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "document_type": {
+                                "type": "string",
+                                "enum": ["invoice", "contract", "receipt", "unknown"],
+                            },
+                            "fields": {
+                                "type": "object",
+                                "description": "All extracted fields relevant to the document type",
+                            },
+                        },
+                        "required": ["document_type", "fields"],
+                    }
+                },
+            }
+        }
+    ],
+    "toolChoice": {"tool": {"name": "record_extraction"}},
+}
+
+# Error codes worth retrying via SQS redelivery; anything else is permanent
+TRANSIENT_ERROR_CODES = {
+    "ThrottlingException",
+    "TooManyRequestsException",
+    "ServiceUnavailableException",
+    "InternalServerException",
+    "ModelTimeoutException",
+    "ModelNotReadyException",
+    "RequestTimeout",
+    "SlowDown",
+}
+
+
+def is_transient_error(exc: Exception) -> bool:
+    if isinstance(exc, ClientError):
+        code = exc.response.get("Error", {}).get("Code", "")
+        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
+        return code in TRANSIENT_ERROR_CODES or status >= 500
+    # Connection resets, timeouts, endpoint hiccups
+    return isinstance(exc, BotoCoreError)
 
 
 def update_document_status(document_id: str, status: str, error: str = None):
@@ -49,10 +99,16 @@ def download_document_from_s3(s3_key: str) -> bytes:
     return response["Body"].read()
 
 
+def parse_tool_use_response(response: dict) -> dict:
+    for block in response["output"]["message"]["content"]:
+        if "toolUse" in block:
+            return block["toolUse"]["input"]
+    raise ValueError("Model response contained no toolUse block")
+
+
 def extract_document_with_claude(document_bytes: bytes, filename: str) -> dict:
     bedrock_client = get_bedrock_client()
     clean_filename = filename.rsplit(".", 1)[0].replace("-", " ").replace("_", " ")
-    print(f"Using clean filename: '{clean_filename}'")
 
     messages = [
         {
@@ -81,19 +137,11 @@ def extract_document_with_claude(document_bytes: bytes, filename: str) -> dict:
             "maxTokens": 2000,
             "temperature": 0,
         },
+        toolConfig=EXTRACTION_TOOL_CONFIG,
     )
 
-    raw_text = response["output"]["message"]["content"][0]["text"]
+    extracted_data = parse_tool_use_response(response)
     usage = response["usage"]
-    print(f"Claude raw response: {repr(raw_text)}")
-
-    clean_text = raw_text.strip()
-    if clean_text.startswith("```"):
-        clean_text = clean_text.split("\n", 1)[1]
-        clean_text = clean_text.rsplit("```", 1)[0]
-        clean_text = clean_text.strip()
-
-    extracted_data = json.loads(clean_text)
 
     return {
         "extracted_data": extracted_data,
@@ -127,56 +175,67 @@ def save_extraction_to_dynamodb(document_id: str, extraction_result: dict):
     return doc_type
 
 
-def write_kb_metadata(document_id: str, s3_key: str, extracted_data: dict):
-    s3_client = get_s3_client()
-    slim_meta = {"document_id": document_id}
-    metadata = {
-        "metadataAttributes": slim_meta
-    }
-    s3_client.put_object(
-        Bucket=settings.s3_bucket_name,
-        Key=s3_key + ".metadata.json",
-        Body=json.dumps(metadata),
-        ContentType="application/json",
-    )
-    print(f"Wrote KB metadata to {s3_key}.metadata.json")
-
-
-def trigger_kb_ingestion(document_id: str, s3_key: str, extracted_data: dict):
-    write_kb_metadata(document_id, s3_key, extracted_data)
+def trigger_kb_ingestion(document_id: str, s3_key: str):
+    # Document-level ingestion indexes just this file instead of
+    # rescanning the whole data source like start_ingestion_job
     bedrock_agent = get_bedrock_agent_client()
-    response = bedrock_agent.start_ingestion_job(
+    response = bedrock_agent.ingest_knowledge_base_documents(
         knowledgeBaseId=settings.bedrock_kb_id,
         dataSourceId=settings.bedrock_kb_data_source_id,
+        documents=[
+            {
+                "content": {
+                    "dataSourceType": "S3",
+                    "s3": {
+                        "s3Location": {"uri": f"s3://{settings.s3_bucket_name}/{s3_key}"}
+                    },
+                },
+                "metadata": {
+                    "type": "IN_LINE_ATTRIBUTE",
+                    "inlineAttributes": [
+                        {
+                            "key": "document_id",
+                            "value": {"type": "STRING", "stringValue": document_id},
+                        }
+                    ],
+                },
+            }
+        ],
     )
-    job_id = response["ingestionJob"]["ingestionJobId"]
-    print(f"KB ingestion job started: {job_id}")
-    return job_id
+    status = response["documentDetails"][0]["status"]
+    logger.info("KB ingestion for %s: %s", s3_key, status)
+    return status
 
 
-def process_document(document_id: str, s3_key: str, filename: str):
-    print(f"Processing document {document_id}: {filename}")
+def process_document(document_id: str, s3_key: str, filename: str) -> str:
+    """Returns 'completed', 'retry' (transient failure), or 'failed' (permanent)."""
+    logger.info("Processing document %s: %s", document_id, filename)
     try:
         update_document_status(document_id, "PROCESSING")
 
-        print(f"Downloading from S3: {s3_key}")
         document_bytes = download_document_from_s3(s3_key)
-        print(f"Downloaded {len(document_bytes)} bytes")
+        logger.info("Downloaded %d bytes from %s", len(document_bytes), s3_key)
 
-        print("Sending to Claude for extraction...")
         extraction_result = extract_document_with_claude(document_bytes, filename)
-        print(f"Extraction complete. Tokens used: {extraction_result['input_tokens']} in, {extraction_result['output_tokens']} out")
+        logger.info(
+            "Extraction complete. Tokens used: %d in, %d out",
+            extraction_result["input_tokens"],
+            extraction_result["output_tokens"],
+        )
 
         doc_type = save_extraction_to_dynamodb(document_id, extraction_result)
-        print(f"Saved extraction to DynamoDB. Document type: {doc_type}")
-        trigger_kb_ingestion(document_id, s3_key, extraction_result["extracted_data"])
+        logger.info("Saved extraction to DynamoDB. Document type: %s", doc_type)
+        trigger_kb_ingestion(document_id, s3_key)
 
         update_document_status(document_id, "COMPLETED")
-        print(f"Document {document_id} processing complete")
-        return True
+        logger.info("Document %s processing complete", document_id)
+        return "completed"
 
     except Exception as e:
-        error_msg = str(e)
-        print(f"Error processing document {document_id}: {error_msg}")
-        update_document_status(document_id, "FAILED", error=error_msg)
-        return False
+        if is_transient_error(e):
+            logger.warning("Transient error processing %s, will retry: %s", document_id, e)
+            update_document_status(document_id, "PENDING", error=str(e))
+            return "retry"
+        logger.error("Permanent error processing %s: %s", document_id, e)
+        update_document_status(document_id, "FAILED", error=str(e))
+        return "failed"

@@ -1,6 +1,11 @@
 import boto3
+from botocore.config import Config
 from functools import lru_cache
 from app.core.config import settings
+
+# Bedrock throttles aggressively — adaptive mode adds client-side rate
+# limiting on top of exponential backoff
+BEDROCK_RETRY_CONFIG = Config(retries={"max_attempts": 8, "mode": "adaptive"})
 
 
 # lru_cache means "create this once, reuse forever"
@@ -33,6 +38,7 @@ def get_bedrock_client():
     return boto3.client(
         "bedrock-runtime",
         region_name=settings.aws_region,
+        config=BEDROCK_RETRY_CONFIG,
     )
 
 
@@ -72,4 +78,5 @@ def get_bedrock_agent_runtime_client():
     return boto3.client(
         "bedrock-agent-runtime",
         region_name=settings.aws_region,
+        config=BEDROCK_RETRY_CONFIG,
     )

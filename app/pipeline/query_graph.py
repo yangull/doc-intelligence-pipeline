@@ -1,5 +1,4 @@
 import os
-import logging
 from typing import Any
 from typing_extensions import TypedDict
 
@@ -12,8 +11,6 @@ os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_base_url)
 from langgraph.graph import StateGraph, END
 from langfuse import observe, get_client  # v3 API — langfuse_context no longer exists
 from app.core.aws_clients import get_bedrock_client, get_bedrock_agent_runtime_client
-
-logger = logging.getLogger(__name__)
 
 
 # Shared state object passed between every node in the graph

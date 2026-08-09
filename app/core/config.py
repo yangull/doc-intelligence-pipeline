@@ -15,13 +15,20 @@ class Settings(BaseSettings):
     s3_bucket_name: str = "doc-intelligence-documents-dev"
     dynamodb_table_name: str = "doc-intelligence-documents-dev"
     bedrock_model_id: str = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    sqs_queue_url: str = "https://sqs.eu-west-1.amazonaws.com/549116506173/doc-intelligence-documents-dev"
-    bedrock_kb_id: str = "GTW9CRTHWL"
-    bedrock_kb_data_source_id: str = "PPSRC9SMY5"
+    sqs_queue_url: str
+    bedrock_kb_id: str
+    bedrock_kb_data_source_id: str
+
+    api_key: str = ""
+    cors_allow_origins: str = ""
 
     langfuse_secret_key: str = ""
     langfuse_public_key: str = ""
     langfuse_base_url: str = "https://cloud.langfuse.com"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
 
 settings = Settings()
