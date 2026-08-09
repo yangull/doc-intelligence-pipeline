@@ -184,12 +184,23 @@ AWS_REGION=eu-west-1
 S3_BUCKET_NAME=doc-intelligence-documents-dev
 DYNAMODB_TABLE_NAME=doc-intelligence-documents-dev
 BEDROCK_MODEL_ID=eu.anthropic.claude-sonnet-4-5-20250929-v1:0
+# Required — no defaults, the app refuses to start without them
 SQS_QUEUE_URL=https://sqs.eu-west-1.amazonaws.com/<account>/doc-intelligence-documents-dev
 BEDROCK_KB_ID=<your-kb-id>
 BEDROCK_KB_DATA_SOURCE_ID=<your-datasource-id>
+# Optional — empty API_KEY disables auth, empty CORS list means wildcard
+API_KEY=
+CORS_ALLOW_ORIGINS=
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_BASE_URL=https://cloud.langfuse.com
+```
+
+### Tests
+
+```bash
+uv run ruff check .
+uv run pytest
 ```
 
 ### Running Locally
@@ -273,8 +284,6 @@ cd terraform && terraform apply
 │   │   └── aws_clients.py      # boto3 client factories
 │   ├── pipeline/
 │   │   └── query_graph.py      # LangGraph pipeline + Langfuse tracing
-│   ├── schemas/
-│   │   └── documents.py        # Pydantic models
 │   └── worker/
 │       ├── extractor.py        # Claude extraction + KB ingestion
 │       └── worker.py           # SQS polling loop
