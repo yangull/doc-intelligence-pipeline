@@ -288,29 +288,6 @@ resource "aws_ecr_repository" "app" {
 }
 
 # ============================================
-# IAM ROLE - ECR pull access (kept from earlier; reusable)
-# ============================================
-resource "aws_iam_role" "apprunner_access" {
-  name = "${var.project_name}-apprunner-access-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "build.apprunner.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "apprunner_access_ecr" {
-  role       = aws_iam_role.apprunner_access.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
-}
-
-# ============================================
 # IAM ROLE - the RUNNING app's identity (reused by Fargate task)
 # Grants the app its AWS permissions: S3, DynamoDB, SQS, Bedrock, SSM.
 # ============================================
@@ -369,16 +346,26 @@ resource "aws_iam_role_policy" "apprunner_instance" {
         Resource = [aws_sqs_queue.documents.arn]
       },
       {
-        # Bedrock: invoke Claude for extraction + call the Knowledge Base for RAG
-        Sid    = "BedrockAccess"
+        # Bedrock: invoke Claude via the EU cross-region inference profile.
+        # The profile routes to the foundation model in any EU region, so
+        # both the profile ARN and the region-wildcarded model ARN are needed.
+        Sid    = "BedrockInvoke"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel"]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+        ]
+      },
+      {
+        # Knowledge Base: vector retrieval for RAG + per-document ingestion
+        Sid    = "BedrockKnowledgeBase"
         Effect = "Allow"
         Action = [
-          "bedrock:InvokeModel",
           "bedrock:Retrieve",
-          "bedrock:RetrieveAndGenerate",
-          "bedrock:StartIngestionJob"
+          "bedrock:IngestKnowledgeBaseDocuments"
         ]
-        Resource = ["*"] # Bedrock model/KB ARNs vary; scoped by action set
+        Resource = [aws_bedrockagent_knowledge_base.documents.arn]
       },
       {
         # SSM: read the two encrypted Langfuse parameters at startup
@@ -530,9 +517,17 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
 
-      # Non-secret env vars
+      # Non-secret env vars — the app requires the queue/KB identifiers,
+      # so they are passed from the resources Terraform manages
       environment = [
-        { name = "APP_ENV", value = "production" }
+        { name = "APP_ENV", value = "production" },
+        { name = "S3_BUCKET_NAME", value = aws_s3_bucket.documents.bucket },
+        { name = "DYNAMODB_TABLE_NAME", value = aws_dynamodb_table.documents.name },
+        { name = "SQS_QUEUE_URL", value = aws_sqs_queue.documents.url },
+        { name = "BEDROCK_KB_ID", value = aws_bedrockagent_knowledge_base.documents.id },
+        { name = "BEDROCK_KB_DATA_SOURCE_ID", value = aws_bedrockagent_data_source.documents.data_source_id },
+        { name = "API_KEY", value = var.api_key },
+        { name = "CORS_ALLOW_ORIGINS", value = var.cors_allow_origins }
       ]
 
       # Secrets: ECS fetches these from SSM at launch and injects as env vars.
