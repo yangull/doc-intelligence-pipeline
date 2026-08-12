@@ -1,0 +1,9 @@
+{
+  "_comment": "Bedrock on-demand token rates for the model in BEDROCK_MODEL_ID, in USD per 1,000,000 tokens. These are NOT filled in: fill them from the AWS Bedrock pricing page for your region (https://aws.amazon.com/bedrock/pricing/) and record where you read them and when. The harness refuses to run with nulls rather than substituting a guessed rate, because a cost number that nobody can trace is worse than no cost number.",
+  "model_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "region": "eu-west-1",
+  "input_per_1m_usd": null,
+  "output_per_1m_usd": null,
+  "source": null,
+  "checked_on": null
+}

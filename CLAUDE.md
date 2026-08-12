@@ -6,6 +6,80 @@ Portfolio AWS document-intelligence app: FastAPI API + background worker that ex
 structured data from uploaded PDFs via Bedrock (forced tool use) and ingests them into a
 Bedrock Knowledge Base. Repo: yangull/doc-intelligence-pipeline.
 
+## Current focus: Phase 1 — LLM eval harness
+
+Building a rigorous eval harness for the query pipeline (weeks 1–5 of the user's
+self-improvement blueprint):
+
+1. Manually curated ground-truth dataset at `eval/dataset.json` (question /
+   expected answer / expected citation triples, growing to 50+).
+2. Metrics: retrieval hit rate, answer faithfulness (LLM-as-judge with a written
+   rubric), citation accuracy, cost + latency per query.
+3. Plain pytest + hand-rolled harness first (learning goal); evaluate promptfoo
+   or Braintrust later.
+4. Wire into CI so prompt/model changes that regress quality fail the build.
+5. Deliverables: `EVALS.md` (metric choices + known weaknesses) and a small
+   quality-over-time dashboard.
+
+No fabricated metrics anywhere — every number must be reproducible from the harness.
+
+Status: corpus, dataset (17 cases incl. 3 negatives), and the deterministic metrics
+(retrieval hit rate, citation accuracy, answer match, cited-nothing, latency, cost) are
+built. `generator()` now uses forced tool use so citation accuracy is distinct from
+retrieval hit rate. `eval/pricing.json` is unfilled — the harness refuses to run
+without real Bedrock rates rather than guessing (`--allow-missing-pricing` to skip
+cost). Still to do: faithfulness LLM-judge, CI gate, `EVALS.md`, dashboard.
+
+First recorded baseline (2026-08-12, `eval/results/20260812T195721Z.json`): retrieval
+hit rate 78.6%, citation accuracy 78.6%, answer match 78.6%, cited-nothing 100% (3/3
+negatives), latency p50 5.07s / p95 5.87s. The three misses are the three cases whose
+documents failed to index, not quality failures — on the 11 indexed documents it scored
+11/11. All three rates being equal is coincidence, not evidence that citation accuracy
+is redundant; no case has yet separated them in a live run.
+
+As of 2026-08-13 all findings from three pre-commit review rounds are fixed (80 tests,
+lint clean, nothing committed). Notable hardening beyond the metrics themselves:
+`corpus_manifest.json` was repaired via `--verify-only` and now shows the true KB state
+(6 INDEXED, 2 FAILED — `contract-nda-mutual.pdf`, `invoice-scanned-lowquality.pdf`), so
+**the harness currently refuses to run** until those two are fixed or it is invoked with
+`--allow-unindexed`. Error handling: `/query` returns 502 on a malformed model response;
+`cited_chunks` rejects bools and out-of-range indices; pricing rates must be JSON
+numbers; `tests/conftest.py` blanks Langfuse credentials so pytest cannot ship traces to
+the real project (runs before 2026-08-12 did — see cleanup note below).
+
+### Open decisions (carried over — ask the user, do not decide unilaterally)
+
+1. `/query` in `app/api/documents.py` still builds `sources` from all `retrieved_chunks`,
+   ignoring the `citations` / `cited_chunk_indices` the pipeline now produces. It reports
+   five "sources" even when the model cited nothing. Fixing it changes a public response
+   shape.
+2. `trigger_kb_ingestion` had its inline metadata removed to unbreak ingestion (Bedrock
+   rejects `IN_LINE_ATTRIBUTE` metadata for an S3-backed data source). Accept permanently,
+   or restore `document_id` later via sidecar `.metadata.json` files?
+3. `invoice-scanned-lowquality.pdf` will not index: it is a genuine raster scan and the
+   data source uses the default parser, which has no OCR. Enable a foundation-model parser
+   (costs per page, belongs in `terraform/`) or drop the document and its two cases?
+4. `contract-nda-mutual.pdf` fails to index for unknown reasons — empty `statusReason`, and
+   identical bytes under a fresh S3 key fail too, so it is content-specific. Keep digging
+   (CloudWatch, console, or regenerate with different text) or park it?
+5. The baseline results file uses pre-rename keys (`abstention_rate`, `total_cost_usd`),
+   and the schema has since diverged further (`errored_cases`, `error`,
+   `expected_source_unindexed` fields added). Re-run for a clean baseline (~34 Bedrock
+   calls; needs `--allow-unindexed` while decision 3/4 are open), drop it, or leave it
+   with a note? Consider adding a `schema_version` field to harness output either way.
+6. Commit strategy: the `extractor.py` ingestion fix is a production bugfix that changes
+   deploy behaviour, while everything else is the eval harness. Worth splitting into two
+   commits so the deploy-relevant change is reviewable and revertable on its own.
+
+### Only the user can do these
+
+- Fill `eval/pricing.json` with real Bedrock rates for `eu-west-1`. The public pricing page
+  lists no Sonnet 4.5 entry; Cost Explorer against today's recorded token counts is the most
+  reliable source. Record `source` and `checked_on` so the number stays traceable.
+- Anything that provisions or reconfigures AWS infrastructure (e.g. the parser in item 3).
+- Earlier `pytest` runs shipped synthetic traces into the real Langfuse project before
+  `tests/conftest.py` was fixed to blank the credentials; those traces may want deleting.
+
 ## Commands
 
 ```bash
@@ -13,9 +87,29 @@ uv sync                          # install deps
 uv run pytest                    # run tests (must pass before any push)
 uv run pytest tests/test_worker.py -k test_name   # run a single test
 uv run ruff check .              # lint (line-length 100)
+uv run pytest --cov=app --cov=main   # tests with coverage report
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push  # one-time hook setup after clone
 uv run uvicorn main:app --reload # run API locally
 uv run python -m app.worker.worker  # run worker locally
 ```
+
+Eval harness (all scripts are `python -m`, since `eval/` is a package):
+
+```bash
+uv run python -m eval.generate_corpus   # regenerate eval/corpus/*.pdf (deterministic)
+uv run python -m eval.reset_corpus      # dry run: what would be purged from KB/S3/DynamoDB
+uv run python -m eval.reset_corpus --yes  # DESTRUCTIVE purge
+uv run python -m eval.ingest_corpus     # upload corpus via the running API; writes corpus_manifest.json
+uv run python -m eval.ingest_corpus --verify-only  # re-check kb_status only (free, no Bedrock)
+uv run python -m eval.harness           # score the dataset; writes eval/results/{timestamp}.json
+```
+
+The manifest tracks two statuses per document: `status` (app-reported; COMPLETED only means
+the ingest call was accepted) and `kb_status` (the Knowledge Base's own view; only INDEXED
+counts). The harness gates on `kb_status` — `--allow-unindexed` overrides, stamping
+affected results `expected_source_unindexed`. Errored harness cases score None on every
+metric (excluded from rates and latency percentiles, counted in `errored_cases`, non-zero
+exit).
 
 Terraform lives in `terraform/`; run plan/apply from that directory.
 
@@ -75,8 +169,15 @@ start without them. `tests/conftest.py` sets fake values so tests never need rea
 - DynamoDB rejects floats; extraction results are round-tripped through
   `json.loads(..., parse_float=Decimal)` before `put_item`.
 - `terraform.tfstate` is untracked on purpose.
+- Git hooks via pre-commit: ruff runs on every commit, pytest on every push (matters
+  because push to main deploys).
 
 ## Working with the user
 
-- Junior dev: explain changes in simple terms, one concept at a time.
+- Backend/AI engineer, job hunting in Berlin; this repo is the flagship CV project.
+- Explain changes in simple terms; one concrete action at a time, no menus of
+  alternatives mid-step.
+- Short answers, compact change lists; they read every diff.
+- Use plan mode for anything non-trivial.
+- Challenge their decisions directly on disagreement.
 - Ask before commit/push and before anything that costs money in AWS.

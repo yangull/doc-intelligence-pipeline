@@ -1,0 +1,145 @@
+{
+  "description": "Hand-curated ground truth for the query pipeline. Every expected value is copied from the committed PDFs in eval/corpus/ and is verified against the rendered text by tests/test_eval_corpus.py. If eval/generate_corpus.py changes a number, this file must change with it.",
+  "matching": "expected_answer_contains is matched case-insensitively after collapsing whitespace and stripping thousands separators, so '1,240.00' also matches '1240.00'.",
+  "cases": [
+    {
+      "id": "nordwind-jan-total",
+      "question": "What is the total due on Nordwind invoice NW-2401?",
+      "answerable": true,
+      "expected_source_filename": "invoice-nordwind-2401.pdf",
+      "expected_answer_contains": ["1,240.00", "EUR"],
+      "notes": "Baseline lookup. Two Nordwind invoices exist, so the invoice number must be honoured."
+    },
+    {
+      "id": "nordwind-mar-total",
+      "question": "What is the total due on Nordwind invoice NW-2403?",
+      "answerable": true,
+      "expected_source_filename": "invoice-nordwind-2403.pdf",
+      "expected_answer_contains": ["890.00", "EUR"],
+      "notes": "Same vendor as NW-2401. Retrieving the wrong Nordwind invoice yields 1,240.00."
+    },
+    {
+      "id": "nordwind-disambiguate-antwerp",
+      "question": "Which Nordwind invoice covers freight forwarding to Antwerp? Give the invoice number.",
+      "answerable": true,
+      "expected_source_filename": "invoice-nordwind-2403.pdf",
+      "expected_answer_contains": ["NW-2403"],
+      "notes": "Disambiguation by line-item content rather than by invoice number in the question."
+    },
+    {
+      "id": "nordwind-jan-storage-line",
+      "question": "How much did Nordwind charge for warehouse storage on invoice NW-2401?",
+      "answerable": true,
+      "expected_source_filename": "invoice-nordwind-2401.pdf",
+      "expected_answer_contains": ["176.52"],
+      "notes": "Single line item, not the total. Tests that the model reads the row, not the summary."
+    },
+    {
+      "id": "kranich-currency",
+      "question": "What currency is the Kranich Software invoice issued in?",
+      "answerable": true,
+      "expected_source_filename": "invoice-kranich-2402.pdf",
+      "expected_answer_contains": ["GBP"],
+      "notes": "Only non-EUR document in the corpus."
+    },
+    {
+      "id": "kranich-vat-rate",
+      "question": "What VAT rate is applied on the Kranich Software invoice?",
+      "answerable": true,
+      "expected_source_filename": "invoice-kranich-2402.pdf",
+      "expected_answer_contains": ["20%"],
+      "notes": "20% here versus 19% on every German document, so a cross-document mix-up is visible. Needle includes the percent sign: a bare '20' also matches inside any 2024 date."
+    },
+    {
+      "id": "vogel-scan-total",
+      "question": "What is the total due on the Vogel Druck invoice?",
+      "answerable": true,
+      "expected_source_filename": "invoice-scanned-lowquality.pdf",
+      "expected_answer_contains": ["216.46"],
+      "notes": "Raster scan with no text layer: skewed, speckled, low contrast. Exercises the vision path and is expected to be the hardest case in the set."
+    },
+    {
+      "id": "vogel-scan-invoice-number",
+      "question": "What is the invoice number on the Vogel Druck invoice?",
+      "answerable": true,
+      "expected_source_filename": "invoice-scanned-lowquality.pdf",
+      "expected_answer_contains": ["VD-2405"],
+      "notes": "Alphanumeric read off the same degraded scan; character-level rather than numeric."
+    },
+    {
+      "id": "consulting-notice-period",
+      "question": "How much notice must a party give to terminate the consulting services agreement?",
+      "answerable": true,
+      "expected_source_filename": "contract-consulting-services.pdf",
+      "expected_answer_contains": ["60 days"],
+      "notes": "Clause 4 also contains a 14-day cure period, so 14 is the plausible wrong answer. Needle includes the unit: a bare '60' also matches inside '76,000' once separators are stripped."
+    },
+    {
+      "id": "consulting-day-rate",
+      "question": "What is the day rate under the consulting services agreement?",
+      "answerable": true,
+      "expected_source_filename": "contract-consulting-services.pdf",
+      "expected_answer_contains": ["950"],
+      "notes": "Clause 3."
+    },
+    {
+      "id": "consulting-fee-cap",
+      "question": "What is the maximum total in fees payable during the initial term of the consulting agreement?",
+      "answerable": true,
+      "expected_source_filename": "contract-consulting-services.pdf",
+      "expected_answer_contains": ["76,000"],
+      "notes": "Same clause as the day rate; the model must pick the cap, not the rate."
+    },
+    {
+      "id": "nda-jurisdiction",
+      "question": "Which courts have exclusive jurisdiction under the mutual non-disclosure agreement?",
+      "answerable": true,
+      "expected_source_filename": "contract-nda-mutual.pdf",
+      "expected_answer_contains": ["Frankfurt"],
+      "notes": "The NDA parties are in Zurich and Berlin, so naming either city is the wrong answer."
+    },
+    {
+      "id": "receipt-total",
+      "question": "What was the total on the Papierhaus Berlin receipt?",
+      "answerable": true,
+      "expected_source_filename": "receipt-office-supplies.pdf",
+      "expected_answer_contains": ["47.60"],
+      "notes": "Shortest document in the corpus; tests retrieval of a small chunk."
+    },
+    {
+      "id": "report-headcount",
+      "question": "How many employees were there at the end of Q3?",
+      "answerable": true,
+      "expected_source_filename": "report-q3-summary.pdf",
+      "expected_answer_contains": ["48"],
+      "notes": "Prose, not a labelled field. The same sentence contains 41 (end of Q2) and 22 (engineering)."
+    },
+    {
+      "id": "negative-unknown-vendor",
+      "question": "What is the total on the Siemens invoice?",
+      "answerable": false,
+      "expected_source_filename": null,
+      "expected_answer_contains": [],
+      "absent_terms": ["Siemens"],
+      "notes": "No Siemens document exists. The pipeline should abstain and cite nothing."
+    },
+    {
+      "id": "negative-unrelated-topic",
+      "question": "What is the company's employee stock option policy?",
+      "answerable": false,
+      "expected_source_filename": null,
+      "expected_answer_contains": [],
+      "absent_terms": ["stock option", "equity grant"],
+      "notes": "Topic absent from the corpus entirely; retrieval will still return its five nearest chunks."
+    },
+    {
+      "id": "negative-plausible-but-absent",
+      "question": "How much did Nordwind charge for air freight in December 2023?",
+      "answerable": false,
+      "expected_source_filename": null,
+      "expected_answer_contains": [],
+      "absent_terms": ["air freight", "December 2023", "2023-12"],
+      "notes": "Adversarial: the vendor is real and Nordwind invoices will retrieve strongly, but there is no air freight line and no December 2023 invoice. Tests abstention under confident retrieval."
+    }
+  ]
+}

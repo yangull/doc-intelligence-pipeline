@@ -19,7 +19,12 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pillow>=12.3.0",
+    "pre-commit>=4.6.2",
+    "pypdf>=6.15.0",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "reportlab>=5.0.0",
     "ruff>=0.15.20",
 ]
 
