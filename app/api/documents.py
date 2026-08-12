@@ -93,7 +93,13 @@ def get_document_status(document_id: str):
 
 @router.post("/query", response_model=QueryResponse)
 def query_documents(request: QueryRequest):
-    result = run_query_pipeline(request.question)  # root trace wraps all nodes
+    try:
+        result = run_query_pipeline(request.question)  # root trace wraps all nodes
+    except ValueError:
+        # generator() raises when the forced tool-use response carries no toolUse
+        # block; that is the model misbehaving, not a bad request — surface it as a
+        # clean 502 instead of a 500 with a stack trace
+        raise HTTPException(status_code=502, detail="Model returned a malformed response")
 
     sources = []
     for i, chunk in enumerate(result["retrieved_chunks"]):

@@ -20,6 +20,59 @@ class QueryState(TypedDict):
     retrieved_chunks: list[dict[str, Any]]
     answer: str
     citations: list[str]
+    cited_chunk_indices: list[int]
+    token_usage: dict[str, int]
+
+
+# Forced tool use gives schema-validated JSON — and, unlike free text, makes the
+# model name the chunks it actually used, so citation accuracy is measurable
+# independently of retrieval hit rate.
+ANSWER_TOOL_CONFIG = {
+    "tools": [
+        {
+            "toolSpec": {
+                "name": "record_answer",
+                "description": "Record the answer and the excerpts it was drawn from.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "answer": {
+                                "type": "string",
+                                "description": "The answer, or a statement that the "
+                                "excerpts do not contain it.",
+                            },
+                            "cited_chunks": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                                "description": "1-based numbers of the excerpts the answer "
+                                "relies on. Empty if the answer is not in the excerpts.",
+                            },
+                        },
+                        "required": ["answer", "cited_chunks"],
+                    }
+                },
+            }
+        }
+    ],
+    "toolChoice": {"tool": {"name": "record_answer"}},
+}
+
+
+def parse_answer_tool_use(response: dict) -> dict:
+    for block in response["output"]["message"]["content"]:
+        if "toolUse" in block:
+            return block["toolUse"]["input"]
+    raise ValueError("Model response contained no toolUse block")
+
+
+def accumulate_usage(state: QueryState, response: dict) -> dict[str, int]:
+    usage = response.get("usage", {})
+    running = state.get("token_usage") or {"input_tokens": 0, "output_tokens": 0}
+    return {
+        "input_tokens": running["input_tokens"] + usage.get("inputTokens", 0),
+        "output_tokens": running["output_tokens"] + usage.get("outputTokens", 0),
+    }
 
 
 @observe()  # nested span under the root trace
@@ -39,7 +92,11 @@ def query_rewriter(state: QueryState) -> QueryState:
     rewritten = response["output"]["message"]["content"][0]["text"].strip()
 
     # {**state, ...} copies all existing state fields and overrides rewritten_query
-    return {**state, "rewritten_query": rewritten}
+    return {
+        **state,
+        "rewritten_query": rewritten,
+        "token_usage": accumulate_usage(state, response),
+    }
 
 
 @observe()  # nested span under the root trace
@@ -79,7 +136,9 @@ def generator(state: QueryState) -> QueryState:
 
     prompt = (
         "Answer the question using only the document excerpts below. "
-        "If the answer is not present, say so."
+        "If the answer is not present, say so. "
+        "Record your answer with the record_answer tool, listing in cited_chunks the "
+        "numbers of the excerpts the answer actually relies on."
         f"\n\nExcerpts:\n{context}"
         f"\n\nQuestion: {state['original_query']}"
     )
@@ -87,11 +146,39 @@ def generator(state: QueryState) -> QueryState:
     response = client.converse(
         modelId=settings.bedrock_model_id,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
+        toolConfig=ANSWER_TOOL_CONFIG,
     )
-    answer = response["output"]["message"]["content"][0]["text"].strip()
-    citations = [c["source"] for c in state["retrieved_chunks"] if c["source"]]
 
-    return {**state, "answer": answer, "citations": citations}
+    result = parse_answer_tool_use(response)
+    # Both fields read defensively: a response truncated at max tokens can arrive
+    # with a partial input object, and a KeyError here would surface as a 500
+    answer = str(result.get("answer", "")).strip()
+    chunks = state["retrieved_chunks"]
+
+    # Drop indices the model invented; an out-of-range citation is a hallucination,
+    # not a source, and must not count toward citation accuracy.
+    # `type(i) is int` rather than isinstance: bool subclasses int, so a model
+    # returning [true] would otherwise pass the range check as index 1.
+    cited_indices = sorted(
+        {
+            i
+            for i in result.get("cited_chunks") or []
+            if type(i) is int and 1 <= i <= len(chunks)
+        }
+    )
+    citations = []
+    for i in cited_indices:
+        source = chunks[i - 1].get("source", "")
+        if source and source not in citations:
+            citations.append(source)
+
+    return {
+        **state,
+        "answer": answer,
+        "citations": citations,
+        "cited_chunk_indices": cited_indices,
+        "token_usage": accumulate_usage(state, response),
+    }
 
 
 def build_query_graph():
@@ -122,6 +209,8 @@ def run_query_pipeline(question: str) -> QueryState:
         "retrieved_chunks": [],
         "answer": "",
         "citations": [],
+        "cited_chunk_indices": [],
+        "token_usage": {"input_tokens": 0, "output_tokens": 0},
     })
     # Force flush so traces are sent before the HTTP response returns
     get_client().flush()
