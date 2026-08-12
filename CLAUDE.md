@@ -37,15 +37,40 @@ documents failed to index, not quality failures — on the 11 indexed documents 
 11/11. All three rates being equal is coincidence, not evidence that citation accuracy
 is redundant; no case has yet separated them in a live run.
 
-As of 2026-08-13 all findings from three pre-commit review rounds are fixed (80 tests,
-lint clean, nothing committed). Notable hardening beyond the metrics themselves:
-`corpus_manifest.json` was repaired via `--verify-only` and now shows the true KB state
-(6 INDEXED, 2 FAILED — `contract-nda-mutual.pdf`, `invoice-scanned-lowquality.pdf`), so
-**the harness currently refuses to run** until those two are fixed or it is invoked with
-`--allow-unindexed`. Error handling: `/query` returns 502 on a malformed model response;
-`cited_chunks` rejects bools and out-of-range indices; pricing rates must be JSON
-numbers; `tests/conftest.py` blanks Langfuse credentials so pytest cannot ship traces to
-the real project (runs before 2026-08-12 did — see cleanup note below).
+### Where things stand (end of session, 2026-08-13)
+
+**Three commits exist locally and are deliberately NOT pushed** — `main` is ahead of
+`origin/main` by 3. Working tree clean, 80 tests pass, ruff clean, pre-commit hooks
+installed (ruff on commit, pytest on push).
+
+```
+9210dbc Add eval harness for the query pipeline
+b29337d Return only the chunks the answer cites from the query pipeline
+0e8fc9f Fix KB ingestion rejected for S3-backed data sources
+```
+
+**Pushing deploys** (`.github/workflows/deploy.yml` on push to `main`: ruff + pytest gate,
+then ECR build and `ecs update-service`). The strongest reason to push soon is that
+**document upload is broken in production until `0e8fc9f` lands** — every PDF failed at
+the KB-ingestion step. ECS sits at `desired_count = 0`, so a deploy updates the service
+definition and starts no task; there is no compute cost and the fix is not observable
+until someone scales up to demo. Do not push without asking.
+
+**The harness will refuse to run as-is.** `corpus_manifest.json` (repaired via
+`--verify-only`) records the true KB state: 6 INDEXED, 2 FAILED —
+`contract-nda-mutual.pdf` and `invoice-scanned-lowquality.pdf`. Resolve open decisions 3
+and 4, or pass `--allow-unindexed` to measure anyway (affected cases are stamped
+`expected_source_unindexed`).
+
+All findings from three pre-commit review rounds are fixed. Hardening worth knowing about,
+because each was a real defect rather than a style change: `/query` returns 502 on a
+malformed model response; `cited_chunks` rejects booleans and out-of-range indices
+(`bool` subclasses `int`, so `isinstance` accepted `True` as chunk 1); pricing rates must
+be JSON numbers, checked before any Bedrock spend; errored harness cases score `None` on
+every metric rather than as misses or — for negatives — as passes; `ingest_corpus` refuses
+to run against a non-empty KB and writes its manifest incrementally; `tests/conftest.py`
+blanks Langfuse credentials so pytest cannot ship traces to the real project (runs before
+2026-08-12 did — see the cleanup note below).
 
 ### Open decisions (carried over — ask the user, do not decide unilaterally)
 
@@ -67,9 +92,8 @@ the real project (runs before 2026-08-12 did — see cleanup note below).
    `expected_source_unindexed` fields added). Re-run for a clean baseline (~34 Bedrock
    calls; needs `--allow-unindexed` while decision 3/4 are open), drop it, or leave it
    with a note? Consider adding a `schema_version` field to harness output either way.
-6. Commit strategy: the `extractor.py` ingestion fix is a production bugfix that changes
-   deploy behaviour, while everything else is the eval harness. Worth splitting into two
-   commits so the deploy-relevant change is reviewable and revertable on its own.
+
+(Decision 6, commit strategy, is settled: split into the three commits listed above.)
 
 ### Only the user can do these
 
