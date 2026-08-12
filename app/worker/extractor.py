@@ -175,9 +175,16 @@ def save_extraction_to_dynamodb(document_id: str, extraction_result: dict):
     return doc_type
 
 
-def trigger_kb_ingestion(document_id: str, s3_key: str):
+def trigger_kb_ingestion(s3_key: str):
     # Document-level ingestion indexes just this file instead of
-    # rescanning the whole data source like start_ingestion_job
+    # rescanning the whole data source like start_ingestion_job.
+    #
+    # No metadata block: the data source is S3-backed, and Bedrock rejects
+    # IN_LINE_ATTRIBUTE metadata for those with "You can only upload content and
+    # metadata from S3 if your knowledge base is connected to an S3 data source".
+    # Attaching document_id would mean writing a sidecar .metadata.json next to
+    # every upload, which is the design this repo deliberately moved away from.
+    # The S3 key already carries the document id, so nothing is lost downstream.
     bedrock_agent = get_bedrock_agent_client()
     response = bedrock_agent.ingest_knowledge_base_documents(
         knowledgeBaseId=settings.bedrock_kb_id,
@@ -189,15 +196,6 @@ def trigger_kb_ingestion(document_id: str, s3_key: str):
                     "s3": {
                         "s3Location": {"uri": f"s3://{settings.s3_bucket_name}/{s3_key}"}
                     },
-                },
-                "metadata": {
-                    "type": "IN_LINE_ATTRIBUTE",
-                    "inlineAttributes": [
-                        {
-                            "key": "document_id",
-                            "value": {"type": "STRING", "stringValue": document_id},
-                        }
-                    ],
                 },
             }
         ],
@@ -225,7 +223,7 @@ def process_document(document_id: str, s3_key: str, filename: str) -> str:
 
         doc_type = save_extraction_to_dynamodb(document_id, extraction_result)
         logger.info("Saved extraction to DynamoDB. Document type: %s", doc_type)
-        trigger_kb_ingestion(document_id, s3_key)
+        trigger_kb_ingestion(s3_key)
 
         update_document_status(document_id, "COMPLETED")
         logger.info("Document %s processing complete", document_id)

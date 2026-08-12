@@ -75,7 +75,7 @@ def happy_pipeline(monkeypatch):
         },
     )
     monkeypatch.setattr(extractor, "save_extraction_to_dynamodb", lambda doc_id, result: "invoice")
-    monkeypatch.setattr(extractor, "trigger_kb_ingestion", lambda doc_id, key: "INDEXED")
+    monkeypatch.setattr(extractor, "trigger_kb_ingestion", lambda key: "INDEXED")
     return statuses
 
 
