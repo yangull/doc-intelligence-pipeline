@@ -23,44 +23,58 @@ self-improvement blueprint):
 
 No fabricated metrics anywhere — every number must be reproducible from the harness.
 
-Status: corpus, dataset (17 cases incl. 3 negatives), and the deterministic metrics
-(retrieval hit rate, citation accuracy, answer match, cited-nothing, latency, cost) are
-built. `generator()` now uses forced tool use so citation accuracy is distinct from
-retrieval hit rate. `eval/pricing.json` is unfilled — the harness refuses to run
-without real Bedrock rates rather than guessing (`--allow-missing-pricing` to skip
-cost). Still to do: faithfulness LLM-judge, CI gate, `EVALS.md`, dashboard.
+Status: corpus (6 documents), dataset (14 cases incl. 3 negatives), and the deterministic
+metrics (retrieval hit rate, citation accuracy, answer match, cited-nothing, latency, cost)
+are built. `generator()` now uses forced tool use so citation accuracy is distinct from
+retrieval hit rate. Still to do: faithfulness LLM-judge, CI gate, `EVALS.md`, dashboard,
+and a fresh baseline on the 6-document corpus.
 
-First recorded baseline (2026-08-12, `eval/results/20260812T195721Z.json`): retrieval
-hit rate 78.6%, citation accuracy 78.6%, answer match 78.6%, cited-nothing 100% (3/3
-negatives), latency p50 5.07s / p95 5.87s. The three misses are the three cases whose
-documents failed to index, not quality failures — on the 11 indexed documents it scored
-11/11. All three rates being equal is coincidence, not evidence that citation accuracy
-is redundant; no case has yet separated them in a live run.
+**Pricing is resolved (2026-08-13).** `eval/pricing.json` holds **$3.30 in / $16.50 out per
+1M tokens**. AWS publishes no rate for Sonnet 4.5 anywhere — not on the Bedrock pricing
+page, and the Price List API has zero Anthropic SKUs for `eu-west-1` — so the figures were
+derived from Cost Explorer under the service name `Claude Sonnet 4.5 (Amazon Bedrock
+Edition)` (not `Amazon Bedrock`), filtered to `RECORD_TYPE=Usage` because account credits
+net the charges to $0. Both divisions land on exact round numbers. **These are 1.10x the
+Anthropic first-party rates ($3/$15)** — the EU marketplace uplift — so never substitute
+first-party pricing. Full derivation is in the file's `source` field.
+
+Superseded baseline (2026-08-12, `eval/results/20260812T195721Z.json`): retrieval hit rate
+78.6%, citation accuracy 78.6%, answer match 78.6%, cited-nothing 100%, latency p50 5.07s /
+p95 5.87s. Its three misses were the cases whose documents failed to index; those documents
+and cases have since been dropped, so this file describes a corpus that no longer exists.
+It also predates several schema renames. Treat it as history, not a comparison point.
 
 ### Where things stand (end of session, 2026-08-13)
 
-**Three commits exist locally and are deliberately NOT pushed** — `main` is ahead of
-`origin/main` by 3. Working tree clean, 80 tests pass, ruff clean, pre-commit hooks
-installed (ruff on commit, pytest on push).
+**Four commits exist locally and are deliberately NOT pushed** — `main` is ahead of
+`origin/main` by 4, plus a batch of uncommitted working-tree changes (see below). Pre-commit
+hooks installed (ruff on commit, pytest on push).
 
 ```
+c47ad85 Record session handoff in CLAUDE.md
 9210dbc Add eval harness for the query pipeline
 b29337d Return only the chunks the answer cites from the query pipeline
 0e8fc9f Fix KB ingestion rejected for S3-backed data sources
 ```
 
 **Pushing deploys** (`.github/workflows/deploy.yml` on push to `main`: ruff + pytest gate,
-then ECR build and `ecs update-service`). The strongest reason to push soon is that
-**document upload is broken in production until `0e8fc9f` lands** — every PDF failed at
-the KB-ingestion step. ECS sits at `desired_count = 0`, so a deploy updates the service
-definition and starts no task; there is no compute cost and the fix is not observable
-until someone scales up to demo. Do not push without asking.
+then ECR build and `ecs update-service` for both services). The strongest reason to push
+soon is that **document upload is broken in production until `0e8fc9f` lands** — every PDF
+failed at the KB-ingestion step. Both ECS services sit at `desired_count = 0`, so a deploy
+updates service definitions and starts no task; there is no compute cost and the fix is not
+observable until someone scales up to demo. Do not push without asking.
 
-**The harness will refuse to run as-is.** `corpus_manifest.json` (repaired via
-`--verify-only`) records the true KB state: 6 INDEXED, 2 FAILED —
-`contract-nda-mutual.pdf` and `invoice-scanned-lowquality.pdf`. Resolve open decisions 3
-and 4, or pass `--allow-unindexed` to measure anyway (affected cases are stamped
-`expected_source_unindexed`).
+**The worker now has an ECS service, but it is not applied yet.** `terraform/main.tf`
+defines `aws_ecs_service.worker` / `aws_ecs_task_definition.worker` / a matching egress-only
+security group. Until `terraform apply` runs, AWS still has no SQS consumer, so an upload in
+production stays `PENDING` forever unless a laptop runs `python -m app.worker.worker`.
+Verified plan: **4 to add, 2 to change, 1 to destroy** — the destroy is
+`aws_ecs_task_definition.app` being *replaced*, which is normal (task definitions are
+immutable, so any edit registers a new revision). A destroy of the S3 bucket, DynamoDB
+table, SQS queue, or Knowledge Base would be the real stop signal.
+
+**The harness can now run clean.** `corpus_manifest.json` lists only the 6 INDEXED
+documents, so no `--allow-unindexed` is needed. A run is 28 Bedrock calls, roughly $0.10.
 
 All findings from three pre-commit review rounds are fixed. Hardening worth knowing about,
 because each was a real defect rather than a style change: `/query` returns 502 on a
@@ -72,37 +86,47 @@ to run against a non-empty KB and writes its manifest incrementally; `tests/conf
 blanks Langfuse credentials so pytest cannot ship traces to the real project (runs before
 2026-08-12 did — see the cleanup note below).
 
-### Open decisions (carried over — ask the user, do not decide unilaterally)
+### Open decisions
 
-1. `/query` in `app/api/documents.py` still builds `sources` from all `retrieved_chunks`,
-   ignoring the `citations` / `cited_chunk_indices` the pipeline now produces. It reports
-   five "sources" even when the model cited nothing. Fixing it changes a public response
-   shape.
-2. `trigger_kb_ingestion` had its inline metadata removed to unbreak ingestion (Bedrock
-   rejects `IN_LINE_ATTRIBUTE` metadata for an S3-backed data source). Accept permanently,
-   or restore `document_id` later via sidecar `.metadata.json` files?
-3. `invoice-scanned-lowquality.pdf` will not index: it is a genuine raster scan and the
-   data source uses the default parser, which has no OCR. Enable a foundation-model parser
-   (costs per page, belongs in `terraform/`) or drop the document and its two cases?
-4. `contract-nda-mutual.pdf` fails to index for unknown reasons — empty `statusReason`, and
-   identical bytes under a fresh S3 key fail too, so it is content-specific. Keep digging
-   (CloudWatch, console, or regenerate with different text) or park it?
-5. The baseline results file uses pre-rename keys (`abstention_rate`, `total_cost_usd`),
-   and the schema has since diverged further (`errored_cases`, `error`,
-   `expected_source_unindexed` fields added). Re-run for a clean baseline (~34 Bedrock
-   calls; needs `--allow-unindexed` while decision 3/4 are open), drop it, or leave it
-   with a note? Consider adding a `schema_version` field to harness output either way.
+Decisions 1–4 and 6 are **settled** (2026-08-13):
 
-(Decision 6, commit strategy, is settled: split into the three commits listed above.)
+1. **Settled — fixed.** `/query` now builds `sources` from `cited_chunk_indices`, so an
+   abstention returns `sources: []` instead of five confident-looking chunks.
+2. **Settled — accepted permanently.** `trigger_kb_ingestion` sends no inline metadata;
+   Bedrock rejects `IN_LINE_ATTRIBUTE` for S3-backed data sources, and the S3 key already
+   carries the document id. No sidecar `.metadata.json` files.
+3. **Settled — dropped.** `invoice-scanned-lowquality.pdf` and its two cases are gone. No
+   foundation-model parser was enabled, so the pipeline still has **no OCR path**: a
+   scanned, image-only PDF will not index. Record this in `EVALS.md` as a known weakness.
+4. **Settled — dropped.** `contract-nda-mutual.pdf` and its case are gone. The cause was
+   never found (empty `statusReason`, identical bytes fail under a fresh S3 key), so this
+   is an unexplained content-specific indexing failure, not a fixed bug. Also worth an
+   `EVALS.md` note.
+
+Still open:
+
+5. The baseline results file uses pre-rename keys (`abstention_rate`, `total_cost_usd`) and
+   the schema has diverged further (`errored_cases`, `error`, `expected_source_unindexed`).
+   It also describes the old 8-document corpus. Re-run for a clean baseline (28 Bedrock
+   calls, ~$0.10, no `--allow-unindexed` needed now), drop the old file, or keep it with a
+   note? Consider adding a `schema_version` field to harness output either way.
+
+(Decision 6, commit strategy, is settled: split into the commits listed above.)
 
 ### Only the user can do these
 
-- Fill `eval/pricing.json` with real Bedrock rates for `eu-west-1`. The public pricing page
-  lists no Sonnet 4.5 entry; Cost Explorer against today's recorded token counts is the most
-  reliable source. Record `source` and `checked_on` so the number stays traceable.
-- Anything that provisions or reconfigures AWS infrastructure (e.g. the parser in item 3).
+- ~~Fill `eval/pricing.json`~~ — **done 2026-08-13**, see the pricing note above.
+- ~~Create the API-key SSM parameter~~ — **done**, `/doc-intelligence/dev/api-key`,
+  SecureString, Version 1, `eu-west-1`.
+- `terraform apply` and anything else that provisions or reconfigures AWS infrastructure.
+- Scaling either ECS service above `desired_count = 0` (~$0.05/hour each).
+- Pushing to `main`, which auto-deploys.
 - Earlier `pytest` runs shipped synthetic traces into the real Langfuse project before
   `tests/conftest.py` was fixed to blank the credentials; those traces may want deleting.
+
+Note the `canoa` IAM user **can** query Cost Explorer via the CLI (`aws ce
+get-cost-and-usage`) even though the console's Cost widget returns "Access denied" — the
+console widget needs a separate billing permission the API does not.
 
 ## Commands
 
@@ -168,11 +192,17 @@ start without them. `tests/conftest.py` sets fake values so tests never need rea
 ## Deploy and cost — read before pushing
 
 - **Pushing to `main` triggers the CI deploy** (`.github/workflows/deploy.yml`): a test
-  job (ruff + pytest) gates a build/push to ECR + ECS redeploy via OIDC.
-- Runs on ECS Fargate with **`desired_count = 0`** on purpose — the service is scaled to
-  zero to keep costs near-free. Do not raise it without asking. Demo pattern: set
-  `desired_count = 1` in `terraform/main.tf`, apply, curl the task's public IP on
-  port 8080, scale back to 0 (no ALB by design — see README ADR-3).
+  job (ruff + pytest) gates a build/push to ECR + a forced redeploy of **both** ECS
+  services via OIDC.
+- **Two ECS Fargate services**, both at **`desired_count = 0`** on purpose to keep costs
+  near-free: `doc-intelligence-api-dev` (uvicorn) and `doc-intelligence-worker-dev`
+  (`python -m app.worker.worker`). Same image; the worker's task definition overrides the
+  command. Do not raise either without asking. Demo pattern: set `desired_count = 1` on
+  **both**, apply, curl the API task's public IP on port 8080, scale back to 0 (no ALB by
+  design — see README ADR-3). A demo with only the API up leaves uploads stuck at
+  `PENDING`, because nothing drains the queue.
+- The API key comes from SSM (`/doc-intelligence/dev/api-key`), injected as a container
+  secret at launch — there is no `api_key` Terraform variable any more.
 - This project is **budget-sensitive**: prefer changes that reduce AWS cost (log volume,
   Bedrock calls, S3 scans). Never add always-on resources.
 

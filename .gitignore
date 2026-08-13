@@ -10,6 +10,9 @@ wheels/
 .venv
 .env
 .env.*
+# ...but the template must be committable, or the README's `cp .env.example .env`
+# is impossible to follow on a fresh clone
+!.env.example
 __pycache__/
 .venv/
 .terraform/

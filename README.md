@@ -27,7 +27,7 @@ graph TD
     Worker[SQS Worker on ECS Fargate] -->|poll| SQS
     Worker -->|Converse API| Bedrock[AWS Bedrock\nClaude Sonnet 4.5]
     Worker -->|save extraction| DDB[(DynamoDB)]
-    Worker -->|start_ingestion_job| KB[Bedrock Knowledge Base]
+    Worker -->|ingest_knowledge_base_documents| KB[Bedrock Knowledge Base]
     KB -->|embed + store| S3V[(S3 Vectors)]
     Client -->|POST /query| API
     API -->|LangGraph pipeline| QP[Query Pipeline]
@@ -250,26 +250,55 @@ docker push 549116506173.dkr.ecr.eu-west-1.amazonaws.com/doc-intelligence-dev:la
 
 Or just push to `main` — GitHub Actions handles build + push + deploy automatically via OIDC.
 
-### Starting / Stopping the Service
+### Starting / Stopping the Services
 
-The ECS service runs with `desired_count = 0` by default (zero cost when idle).
+There are **two** ECS services, both at `desired_count = 0` by default (zero cost when idle):
+
+| Service | Runs | Needed for |
+|---|---|---|
+| `doc-intelligence-api-dev` | `uvicorn` (Dockerfile `CMD`) | `/upload`, `/status`, `/query` |
+| `doc-intelligence-worker-dev` | `python -m app.worker.worker` | consuming SQS: extraction + KB ingestion |
+
+Both run the same image; the worker's task definition overrides the command. **A full demo
+needs both** — with only the API running, uploads succeed but stay `PENDING` forever
+because nothing drains the queue.
 
 **To start:**
 ```bash
-# In terraform/main.tf, set desired_count = 1, then:
+# In terraform/main.tf, set desired_count = 1 on BOTH aws_ecs_service blocks, then:
 cd terraform && terraform apply
 
-# Get the task's public IP
-TASK=$(aws ecs list-tasks --cluster doc-intelligence-dev --region eu-west-1 --query 'taskArns[0]' --output text)
+# Get the API task's public IP (the worker has no inbound access by design)
+TASK=$(aws ecs list-tasks --cluster doc-intelligence-dev --service-name doc-intelligence-api-dev --region eu-west-1 --query 'taskArns[0]' --output text)
 ENI=$(aws ecs describe-tasks --cluster doc-intelligence-dev --tasks $TASK --region eu-west-1 --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value | [0]" --output text)
 aws ec2 describe-network-interfaces --network-interface-ids $ENI --region eu-west-1 --query 'NetworkInterfaces[0].Association.PublicIp' --output text
 ```
 
 **To stop:**
 ```bash
-# In terraform/main.tf, set desired_count = 0, then:
+# In terraform/main.tf, set desired_count = 0 on both, then:
 cd terraform && terraform apply
+
+# Confirm nothing is left running (and therefore billing)
+aws ecs list-tasks --cluster doc-intelligence-dev --region eu-west-1
 ```
+
+### API key
+
+In AWS the `X-API-Key` value is read from SSM Parameter Store at container launch, not from
+a Terraform variable — so it never lands in a `.tfvars` file on disk. Create it once before
+the first apply:
+
+```bash
+aws ssm put-parameter --name /doc-intelligence/dev/api-key --type SecureString \
+  --value "$(openssl rand -hex 32)" --region eu-west-1
+
+# Read it back when you need to call the API
+aws ssm get-parameter --name /doc-intelligence/dev/api-key --with-decryption \
+  --region eu-west-1 --query Parameter.Value --output text
+```
+
+Locally, auth is disabled whenever `API_KEY` is empty.
 
 ---
 
