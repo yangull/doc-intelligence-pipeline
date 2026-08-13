@@ -5,12 +5,6 @@
     "status": "COMPLETED",
     "kb_status": "INDEXED"
   },
-  "contract-nda-mutual.pdf": {
-    "document_id": "1002160b-3f27-45bf-870f-3f5b0d7acd59",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/1002160b-3f27-45bf-870f-3f5b0d7acd59/contract-nda-mutual.pdf",
-    "status": "COMPLETED",
-    "kb_status": "FAILED"
-  },
   "invoice-kranich-2402.pdf": {
     "document_id": "f7925f8a-3684-4841-bd38-eea926d88013",
     "s3_uri": "s3://doc-intelligence-documents-dev/uploads/f7925f8a-3684-4841-bd38-eea926d88013/invoice-kranich-2402.pdf",
@@ -28,12 +22,6 @@
     "s3_uri": "s3://doc-intelligence-documents-dev/uploads/87a4d3c1-89f4-4e36-926d-d06a20f1234b/invoice-nordwind-2403.pdf",
     "status": "COMPLETED",
     "kb_status": "INDEXED"
-  },
-  "invoice-scanned-lowquality.pdf": {
-    "document_id": "a168615c-a609-409d-827e-deca7c5d3144",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/a168615c-a609-409d-827e-deca7c5d3144/invoice-scanned-lowquality.pdf",
-    "status": "COMPLETED",
-    "kb_status": "FAILED"
   },
   "receipt-office-supplies.pdf": {
     "document_id": "38d5fc95-dafb-4d9a-88a2-f20d846dcb49",

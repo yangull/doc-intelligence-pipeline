@@ -144,6 +144,21 @@ def test_negative_case_fails_when_the_model_cites_something():
     assert result["cited_nothing"] is False
 
 
+def test_negative_case_fails_when_the_cited_chunk_has_no_source_uri():
+    # Regression: generator() drops cited chunks whose source is "" when building
+    # citations, and the retriever leaves source "" for a result with no s3Location.
+    # Scoring `not citations` therefore passed a case where the model really did
+    # cite something — a false pass, the worst direction for an eval to be wrong in.
+    state = pipeline_state(
+        answer="The Siemens invoice totals 890.00 EUR.",
+        sources=[""],
+        citations=[],
+        indices=[1],
+    )
+    result = harness.score_case(negative_case(), state, None)
+    assert result["cited_nothing"] is False
+
+
 def test_rate_ignores_inapplicable_cases():
     assert harness.rate([True, False, None, True]) == pytest.approx(0.6667, abs=1e-4)
     assert harness.rate([None, None]) is None

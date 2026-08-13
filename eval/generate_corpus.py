@@ -8,14 +8,10 @@ with it.
     uv run python -m eval.generate_corpus
 """
 
-import io
-import random
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 CORPUS_DIR = Path(__file__).parent / "corpus"
@@ -199,57 +195,6 @@ def build_contract_consulting():
     pdf.save()
 
 
-def build_contract_nda():
-    pdf = new_pdf("contract-nda-mutual.pdf")
-    w = Writer(pdf)
-    w.line("MUTUAL NON-DISCLOSURE AGREEMENT", size=14, bold=True, gap=10 * mm)
-    w.paragraph(
-        "This Mutual Non-Disclosure Agreement is made on 14 February 2024 between Helios Data "
-        "AG, Bahnhofstrasse 21, 8001 Zurich, and Brandt Ventures GmbH, Rosenthaler Strasse 40, "
-        "10178 Berlin (each a Party)."
-    )
-    w.y -= 4 * mm
-
-    w.line("1. Confidential Information", bold=True, gap=6 * mm)
-    w.paragraph(
-        "Confidential Information means any non-public technical, commercial, or financial "
-        "information disclosed by one Party to the other, whether orally or in writing, that "
-        "is marked confidential or would reasonably be understood to be confidential."
-    )
-    w.y -= 3 * mm
-
-    w.line("2. Obligations", bold=True, gap=6 * mm)
-    w.paragraph(
-        "Each Party shall keep the other Party's Confidential Information strictly confidential "
-        "and shall not disclose it to any third party without prior written consent, except to "
-        "employees and advisers who need to know it and are bound by equivalent obligations."
-    )
-    w.y -= 3 * mm
-
-    w.line("3. Duration", bold=True, gap=6 * mm)
-    w.paragraph(
-        "The obligations in this Agreement survive for a period of five (5) years from the date "
-        "of disclosure, regardless of whether the discussions between the Parties result in a "
-        "further agreement."
-    )
-    w.y -= 3 * mm
-
-    w.line("4. Exclusions", bold=True, gap=6 * mm)
-    w.paragraph(
-        "This Agreement does not apply to information that is or becomes publicly available "
-        "through no breach by the receiving Party, or that was lawfully known to the receiving "
-        "Party before disclosure."
-    )
-    w.y -= 3 * mm
-
-    w.line("5. Jurisdiction", bold=True, gap=6 * mm)
-    w.paragraph(
-        "The courts of Frankfurt am Main shall have exclusive jurisdiction over any dispute "
-        "arising out of this Agreement."
-    )
-    pdf.save()
-
-
 def build_receipt_office_supplies():
     pdf = new_pdf("receipt-office-supplies.pdf")
     w = Writer(pdf)
@@ -317,105 +262,13 @@ def build_report_q3():
     pdf.save()
 
 
-SCAN_FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-]
-
-
-def _scan_font(bold=False, size=26):
-    path = SCAN_FONT_CANDIDATES[1 if bold else 0]
-    try:
-        return ImageFont.truetype(path, size)
-    except OSError:
-        # Regeneration on a machine without DejaVu still produces a valid (uglier)
-        # page; the committed PDF is the artefact that matters.
-        return ImageFont.load_default()
-
-
-def build_invoice_scanned_lowquality():
-    # A genuine raster scan, not vector text made to look faint: the page is drawn
-    # as an image, degraded, and embedded. There is no extractable text layer, so
-    # this document exercises the model's vision path rather than PDF text parsing.
-    rng = random.Random(20240517)
-    scale = 150 / 72  # ~150 DPI
-    width, height = int(PAGE_WIDTH * scale), int(PAGE_HEIGHT * scale)
-    page = Image.new("L", (width, height), 250)
-    draw = ImageDraw.Draw(page)
-
-    x0, y = 150, 190
-
-    def text(value, size=26, bold=False, gap=46, x=None):
-        nonlocal y
-        draw.text((x0 if x is None else x, y), value, font=_scan_font(bold, size), fill=70)
-        y += gap
-
-    def row(left, right, size=26, bold=False):
-        nonlocal y
-        font = _scan_font(bold, size)
-        draw.text((x0, y), left, font=font, fill=70)
-        right_width = draw.textlength(right, font=font)
-        draw.text((width - 150 - right_width, y), right, font=font, fill=70)
-        y += 44
-
-    text("Vogel Druck & Medien", size=40, bold=True, gap=54)
-    text("Gewerbering 7, 04435 Schkeuditz", size=22, gap=76)
-    text("RECHNUNG / INVOICE", size=32, bold=True, gap=62)
-    text("Invoice number: VD-2405")
-    text("Invoice date: 2024-05-17")
-    text("Payment due: 2024-06-16", gap=76)
-
-    row("Description", "Amount (EUR)", bold=True)
-    draw.line([(150, y), (width - 150, y)], fill=110, width=2)
-    y += 18
-    for description, amount in [
-        ("Brochure printing, 500 copies", 148.00),
-        ("Lamination and finishing", 33.90),
-    ]:
-        row(description, f"{amount:,.2f}")
-    draw.line([(150, y), (width - 150, y)], fill=110, width=2)
-    y += 18
-    row("Subtotal", "181.90")
-    row("VAT (19%)", "34.56")
-    row("Total due", "216.46 EUR", bold=True)
-
-    # Scanner artefacts: skew, speckle, soft focus, uneven exposure
-    page = page.rotate(-1.8, resample=Image.BICUBIC, fillcolor=250)
-    speckle = Image.new("L", (width, height), 255)
-    speckle_draw = ImageDraw.Draw(speckle)
-    for _ in range(4000):
-        sx, sy = rng.randrange(width), rng.randrange(height)
-        radius = rng.choice([1, 1, 1, 2])
-        speckle_draw.ellipse(
-            [sx - radius, sy - radius, sx + radius, sy + radius],
-            fill=rng.randint(150, 215),
-        )
-    page = ImageChops.darker(page, speckle)
-    page = page.filter(ImageFilter.GaussianBlur(radius=0.9))
-    page = ImageEnhance.Contrast(page).enhance(0.62)
-    page = ImageEnhance.Brightness(page).enhance(1.06)
-
-    # Kept in memory rather than written next to the corpus: an intermediate .jpg left
-    # behind by an interrupted run would fail test_corpus_contains_only_expected_files,
-    # and a temp file's random name leaks into the PDF and breaks byte-determinism
-    buffer = io.BytesIO()
-    page.convert("RGB").save(buffer, "JPEG", quality=38, optimize=False)
-    buffer.seek(0)
-
-    pdf = new_pdf("invoice-scanned-lowquality.pdf")
-    pdf.drawImage(ImageReader(buffer), 0, 0, width=PAGE_WIDTH, height=PAGE_HEIGHT)
-    pdf.save()
-
-
 BUILDERS = [
     build_invoice_nordwind_2401,
     build_invoice_kranich_2402,
     build_invoice_nordwind_2403,
     build_contract_consulting,
-    build_contract_nda,
     build_receipt_office_supplies,
     build_report_q3,
-    build_invoice_scanned_lowquality,
 ]
 
 

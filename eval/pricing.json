@@ -1,9 +1,9 @@
 {
-  "_comment": "Bedrock on-demand token rates for the model in BEDROCK_MODEL_ID, in USD per 1,000,000 tokens. These are NOT filled in: fill them from the AWS Bedrock pricing page for your region (https://aws.amazon.com/bedrock/pricing/) and record where you read them and when. The harness refuses to run with nulls rather than substituting a guessed rate, because a cost number that nobody can trace is worse than no cost number.",
+  "_comment": "Bedrock on-demand token rates for the model in BEDROCK_MODEL_ID, in USD per 1,000,000 tokens. Derived from real billed usage, not from a pricing page: the public Bedrock pricing page has no Sonnet 4.5 entry and the AWS Price List API publishes no Anthropic SKUs for eu-west-1, so Cost Explorer against actual usage is the only traceable source. See `source` for the exact derivation.",
   "model_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "region": "eu-west-1",
-  "input_per_1m_usd": null,
-  "output_per_1m_usd": null,
-  "source": null,
-  "checked_on": null
+  "input_per_1m_usd": 3.3,
+  "output_per_1m_usd": 16.5,
+  "source": "AWS Cost Explorer, account 549116506173, service 'Claude Sonnet 4.5 (Amazon Bedrock Edition)', RECORD_TYPE=Usage, June 2026. Usage type EU-MP:EU_InputTokenCount-Units: $0.2514501 over 0.076197 Units (millions of tokens) = $3.3000000000/1M. Usage type EU-MP:EU_OutputTokenCount-Units: $0.1509585 over 0.009149 Units = $16.5000000000/1M. Both divisions land on exact round figures, so these are the published rates rather than an artifact of rounding. Note these are 1.10x the Anthropic first-party rates ($3/$15) -- the EU marketplace uplift -- so first-party pricing must not be substituted here.",
+  "checked_on": "2026-08-13"
 }

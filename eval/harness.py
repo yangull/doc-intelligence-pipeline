@@ -160,10 +160,15 @@ def score_case(case: dict, state: dict, expected_uri: str | None, error: str | N
         # Nothing was retrievable that should have been, so hit/match do not apply.
         # Named for exactly what it measures: the answer text is not inspected, so
         # a fabricated answer with no citations still passes. The judge will close that.
+        #
+        # Derived from cited_chunk_indices, not citations: generator() builds citations
+        # only from cited chunks whose source URI is non-empty, and the retriever leaves
+        # source "" when a result carries no s3Location. Keying off citations therefore
+        # scored "cited a chunk with no URI" as a clean abstention — a false pass.
         result["retrieval_hit"] = None
         result["citation_hit"] = None
         result["answer_match"] = None
-        result["cited_nothing"] = not citations
+        result["cited_nothing"] = not result["cited_chunk_indices"]
 
     return result
 
