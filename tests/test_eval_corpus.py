@@ -82,6 +82,14 @@ def test_expected_values_appear_in_the_source_document(case):
 
 
 def test_corpus_contains_only_expected_files():
+    # Counted against the generator rather than a hardcoded number, which had to be
+    # edited in lockstep whenever a builder was added or dropped. Each builder writes
+    # exactly one PDF, so a leftover from a removed builder shows up as a mismatch —
+    # and ingest_corpus.py globs *.pdf, so an orphan would be uploaded and evaluated.
+    # (Name-level checking happens in generate_corpus.main(), which warns about any
+    # file it did not write. Doing it here would mean writing files from a test.)
+    from eval.generate_corpus import BUILDERS
+
     on_disk = {p.name for p in CORPUS_DIR.glob("*")}
     assert all(name.endswith(".pdf") for name in on_disk), on_disk
-    assert len(on_disk) == 6
+    assert len(on_disk) == len(BUILDERS), sorted(on_disk)

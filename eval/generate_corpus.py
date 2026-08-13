@@ -54,7 +54,14 @@ class Writer:
             self.line(current, size=size, gap=5 * mm)
 
 
+# Filenames written by the current builders. Lets main() spot corpus files left behind
+# by a builder that was removed, and lets the tests derive the expected set instead of
+# hardcoding a count that has to be edited in lockstep.
+WRITTEN: set[str] = set()
+
+
 def new_pdf(filename: str) -> canvas.Canvas:
+    WRITTEN.add(filename)
     # invariant=1 fixes the creation timestamp and document ID, so regenerating
     # the corpus produces byte-identical files
     pdf = canvas.Canvas(str(CORPUS_DIR / filename), pagesize=A4, invariant=1)
@@ -274,13 +281,25 @@ BUILDERS = [
 
 def main():
     CORPUS_DIR.mkdir(parents=True, exist_ok=True)
+    WRITTEN.clear()
     for build in BUILDERS:
         build()
-    written = sorted(p.name for p in CORPUS_DIR.glob("*.pdf"))
+
+    written = sorted(WRITTEN)
     print(f"Wrote {len(written)} PDFs to {CORPUS_DIR}:")
     for name in written:
         size = (CORPUS_DIR / name).stat().st_size
         print(f"  {name}  ({size:,} bytes)")
+
+    # Regenerating only writes; it never deletes. Drop a builder and its PDF stays on
+    # disk, where ingest_corpus.py globs *.pdf and would upload a document the dataset
+    # knows nothing about. Say so loudly rather than silently leaving it.
+    orphans = sorted({p.name for p in CORPUS_DIR.glob("*.pdf")} - WRITTEN)
+    if orphans:
+        print(f"\nWARNING: {len(orphans)} file(s) in the corpus were not written by any "
+              "builder. Delete them, or they will be ingested and evaluated:")
+        for name in orphans:
+            print(f"  {name}")
 
 
 if __name__ == "__main__":

@@ -217,8 +217,8 @@ def aggregate(results: list[dict], pricing: dict | None) -> dict:
         "input_tokens": sum(r["token_usage"].get("input_tokens", 0) for r in results),
         "output_tokens": sum(r["token_usage"].get("output_tokens", 0) for r in results),
         "llm_token_cost_usd": round(sum(costs), 6) if costs else None,
-        "cost_excludes": "retriever query embedding, billed separately and not "
-        "reported by the retrieve API",
+        "cost_excludes": "retriever query embedding (billed separately, not reported by "
+        "the retrieve API) and any tokens an errored case burned before it failed",
         "cost_unavailable_reason": None if pricing else "no rates in eval/pricing.json",
     }
 
@@ -338,7 +338,14 @@ def main():
 
         result = score_case(case, state, expected_uri, error=error)
         result["latency_seconds"] = round(elapsed, 3)
-        result["llm_token_cost_usd"] = compute_cost(result["token_usage"], pricing)
+        # None, not 0.0, when the case errored. The rewriter and retriever calls made
+        # before the failure were really billed, but their usage went out with the
+        # substituted failure state, so the true figure is unknown. Every rate is
+        # already None for an errored case; reporting $0.00 for cost would be the one
+        # defaulted number in a file whose docstring promises there are none.
+        result["llm_token_cost_usd"] = (
+            None if error else compute_cost(result["token_usage"], pricing)
+        )
         result["expected_source_unindexed"] = case["expected_source_filename"] in unindexed
         results.append(result)
 

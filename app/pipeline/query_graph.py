@@ -223,15 +223,21 @@ query_graph = build_query_graph()
 
 @observe(name="query_pipeline")  # root trace — nodes above become nested spans
 def run_query_pipeline(question: str) -> QueryState:
-    result = query_graph.invoke({
-        "original_query": question,
-        "rewritten_query": "",
-        "retrieved_chunks": [],
-        "answer": "",
-        "citations": [],
-        "cited_chunk_indices": [],
-        "token_usage": {"input_tokens": 0, "output_tokens": 0},
-    })
-    # Force flush so traces are sent before the HTTP response returns
-    get_client().flush()
+    try:
+        result = query_graph.invoke({
+            "original_query": question,
+            "rewritten_query": "",
+            "retrieved_chunks": [],
+            "answer": "",
+            "citations": [],
+            "cited_chunk_indices": [],
+            "token_usage": {"input_tokens": 0, "output_tokens": 0},
+        })
+    finally:
+        # In a finally on purpose. A node raising is exactly when the trace is worth
+        # having, and the failure path is the one that skips the flush: /query turns the
+        # exception into a 502 and, on ECS, the task can be SIGTERM'd on scale-down
+        # before the buffer drains on its own. Traces sent before the response returns
+        # has to mean all responses, not just successful ones.
+        get_client().flush()
     return result
