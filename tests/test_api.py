@@ -126,15 +126,29 @@ def test_query_returns_no_sources_when_the_model_cites_nothing(monkeypatch):
 
 
 def test_query_returns_502_on_malformed_model_response(monkeypatch):
-    # generator() raises ValueError when the forced tool-use response has no toolUse
-    # block; the handler must translate that to a clean 502, not a 500 stack trace
+    # generator() raises MalformedModelResponse when the forced tool-use response has
+    # no toolUse block, is truncated, or carries no answer; the handler must translate
+    # that to a clean 502, not a 500 stack trace
     def raise_malformed(question):
-        raise ValueError("Model response contained no toolUse block")
+        raise documents.MalformedModelResponse("Model response contained no toolUse block")
 
     monkeypatch.setattr(documents, "run_query_pipeline", raise_malformed)
     response = client.post("/api/v1/documents/query", json={"question": "anything"})
     assert response.status_code == 502
     assert response.json()["detail"] == "Model returned a malformed response"
+
+
+def test_query_does_not_mask_unrelated_value_errors(monkeypatch):
+    # Regression: the handler used to catch bare ValueError, so a boto3 parameter
+    # validation error or any other ValueError from inside the graph was reported to
+    # the client as "Model returned a malformed response" — hiding a real server bug
+    # behind a 502 that blames the model.
+    def raise_unrelated(question):
+        raise ValueError("Parameter validation failed: invalid knowledgeBaseId")
+
+    monkeypatch.setattr(documents, "run_query_pipeline", raise_unrelated)
+    with pytest.raises(ValueError, match="Parameter validation failed"):
+        client.post("/api/v1/documents/query", json={"question": "anything"})
 
 
 def test_api_key_required_when_configured(monkeypatch, fake_aws):

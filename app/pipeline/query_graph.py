@@ -59,11 +59,19 @@ ANSWER_TOOL_CONFIG = {
 }
 
 
+class MalformedModelResponse(ValueError):
+    """The forced tool-use response was absent, truncated, or missing its answer.
+
+    Subclasses ValueError so existing handlers keep working, but lets callers catch
+    exactly this instead of every ValueError the pipeline might raise.
+    """
+
+
 def parse_answer_tool_use(response: dict) -> dict:
     for block in response["output"]["message"]["content"]:
         if "toolUse" in block:
             return block["toolUse"]["input"]
-    raise ValueError("Model response contained no toolUse block")
+    raise MalformedModelResponse("Model response contained no toolUse block")
 
 
 def accumulate_usage(state: QueryState, response: dict) -> dict[str, int]:
@@ -150,9 +158,21 @@ def generator(state: QueryState) -> QueryState:
     )
 
     result = parse_answer_tool_use(response)
-    # Both fields read defensively: a response truncated at max tokens can arrive
-    # with a partial input object, and a KeyError here would surface as a 500
-    answer = str(result.get("answer", "")).strip()
+    # Read defensively — a response cut off at the token limit arrives with a partial
+    # input object — but do not return the partial as if it were a real answer.
+    answer = str(result.get("answer") or "").strip()
+
+    # An empty answer is indistinguishable downstream from a genuine abstention: the
+    # API would return 200 with answer "" and no sources, and the eval would score it
+    # as a clean cited-nothing pass on a negative case. That silently credits a
+    # technical failure as pipeline quality, which is the exact thing the harness
+    # exists to prevent. Fail loudly so it is counted as an error instead.
+    if response.get("stopReason") == "max_tokens" or not answer:
+        raise MalformedModelResponse(
+            "Model response was truncated or carried no answer "
+            f"(stopReason={response.get('stopReason')!r}, answer_length={len(answer)})"
+        )
+
     chunks = state["retrieved_chunks"]
 
     # Drop indices the model invented; an out-of-range citation is a hallucination,

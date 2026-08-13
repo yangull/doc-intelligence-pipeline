@@ -1,6 +1,7 @@
 import pytest
 
 from app.pipeline import query_graph
+from app.pipeline.query_graph import MalformedModelResponse
 
 
 def tool_use_response(answer, cited_chunks, input_tokens=100, output_tokens=20):
@@ -97,16 +98,32 @@ def test_generator_rejects_booleans_in_cited_chunks(monkeypatch):
     assert result["citations"] == []
 
 
-def test_generator_tolerates_a_truncated_tool_response(monkeypatch):
-    # A response cut off at max tokens can arrive without the fields; this must not
-    # raise a KeyError inside the API handler
+def test_generator_rejects_a_truncated_tool_response(monkeypatch):
+    # A response cut off at max tokens arrives with a partial input object. Returning
+    # it as answer "" with no citations would be indistinguishable from a genuine
+    # abstention: the API 200s with an empty answer, and the eval scores a technical
+    # failure as a clean cited-nothing pass. It must raise so it counts as an error.
     response = {
         "output": {"message": {"content": [{"toolUse": {"name": "record_answer", "input": {}}}]}},
         "usage": {"inputTokens": 10, "outputTokens": 5},
     }
-    result, _ = run_generator(monkeypatch, response)
-    assert result["answer"] == ""
-    assert result["citations"] == []
+    with pytest.raises(MalformedModelResponse, match="truncated or carried no answer"):
+        run_generator(monkeypatch, response)
+
+
+def test_generator_rejects_a_max_tokens_stop_reason(monkeypatch):
+    # Even when the tool input looks complete, stopReason max_tokens means the model
+    # was cut off and the answer cannot be trusted to be whole
+    response = tool_use_response("The total is 1,240.00 EU", [1])
+    response["stopReason"] = "max_tokens"
+    with pytest.raises(MalformedModelResponse, match="truncated or carried no answer"):
+        run_generator(monkeypatch, response)
+
+
+def test_generator_rejects_a_blank_answer(monkeypatch):
+    # Whitespace-only is empty for this purpose
+    with pytest.raises(MalformedModelResponse, match="truncated or carried no answer"):
+        run_generator(monkeypatch, tool_use_response("   ", [1]))
 
 
 def test_generator_tolerates_null_cited_chunks(monkeypatch):
@@ -127,7 +144,7 @@ def test_generator_raises_when_no_tool_use_block(monkeypatch):
         "output": {"message": {"content": [{"text": "here is the answer"}]}},
         "usage": {"inputTokens": 10, "outputTokens": 5},
     }
-    with pytest.raises(ValueError, match="no toolUse block"):
+    with pytest.raises(MalformedModelResponse, match="no toolUse block"):
         run_generator(monkeypatch, response)
 
 

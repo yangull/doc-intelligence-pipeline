@@ -38,11 +38,14 @@ net the charges to $0. Both divisions land on exact round numbers. **These are 1
 Anthropic first-party rates ($3/$15)** — the EU marketplace uplift — so never substitute
 first-party pricing. Full derivation is in the file's `source` field.
 
-Superseded baseline (2026-08-12, `eval/results/20260812T195721Z.json`): retrieval hit rate
+**There is no current baseline.** The first run (2026-08-12) scored retrieval hit rate
 78.6%, citation accuracy 78.6%, answer match 78.6%, cited-nothing 100%, latency p50 5.07s /
-p95 5.87s. Its three misses were the cases whose documents failed to index; those documents
-and cases have since been dropped, so this file describes a corpus that no longer exists.
-It also predates several schema renames. Treat it as history, not a comparison point.
+p95 5.87s — but it measured 17 cases over 8 documents, and its three misses were the cases
+whose documents never indexed. On comparable cases it was 11/11. The results file was
+**deleted** (recoverable via `git show`): it described a corpus that no longer exists and
+used pre-rename keys, so a new run scoring ~100% would look like a 21-point improvement
+that never happened. Record these numbers as history in `EVALS.md`; do not plot them on the
+same axis as anything measured after 2026-08-13.
 
 ### Where things stand (end of session, 2026-08-13)
 

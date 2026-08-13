@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from app.core.config import settings
 from app.core.aws_clients import get_s3_client, get_dynamodb_resource
-from app.pipeline.query_graph import run_query_pipeline
+from app.pipeline.query_graph import MalformedModelResponse, run_query_pipeline
 
 
 def require_api_key(x_api_key: str = Header(default="")):
@@ -95,11 +95,15 @@ def get_document_status(document_id: str):
 def query_documents(request: QueryRequest):
     try:
         result = run_query_pipeline(request.question)  # root trace wraps all nodes
-    except ValueError:
-        # generator() raises when the forced tool-use response carries no toolUse
-        # block; that is the model misbehaving, not a bad request — surface it as a
-        # clean 502 instead of a 500 with a stack trace
-        raise HTTPException(status_code=502, detail="Model returned a malformed response")
+    except MalformedModelResponse as exc:
+        # The forced tool-use response carried no toolUse block, was truncated, or had
+        # no answer. That is the model misbehaving, not a bad request — surface a clean
+        # 502 instead of a 500 with a stack trace. Caught by exact type rather than
+        # ValueError so an unrelated ValueError from boto3 or the graph still raises as
+        # a genuine 500 instead of being mislabelled a model fault.
+        raise HTTPException(
+            status_code=502, detail="Model returned a malformed response"
+        ) from exc
 
     # Only the chunks the answer actually cites, not everything retrieval returned.
     # generator() already dropped out-of-range and non-integer indices, so an
