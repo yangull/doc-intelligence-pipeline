@@ -363,6 +363,12 @@ resource "aws_iam_role_policy" "apprunner_instance" {
         Effect = "Allow"
         Action = [
           "bedrock:Retrieve",
+          # The IngestKnowledgeBaseDocuments API authorizes against the IAM action
+          # bedrock:StartIngestionJob — the names do not match. Granting only
+          # "bedrock:IngestKnowledgeBaseDocuments" grants nothing at all: it is not a
+          # real IAM action, so the call fails with AccessDeniedException naming
+          # StartIngestionJob. Keep both; the unmatched one is inert.
+          "bedrock:StartIngestionJob",
           "bedrock:IngestKnowledgeBaseDocuments"
         ]
         Resource = [aws_bedrockagent_knowledge_base.documents.arn]
