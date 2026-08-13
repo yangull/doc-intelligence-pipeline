@@ -13,6 +13,7 @@ env:
   ECR_REPOSITORY: doc-intelligence-dev
   ECS_CLUSTER: doc-intelligence-dev
   ECS_SERVICE: doc-intelligence-api-dev
+  ECS_WORKER_SERVICE: doc-intelligence-worker-dev
   CONTAINER_NAME: api
 
 jobs:
@@ -65,6 +66,22 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      # Both services run the same image, so both need forcing onto the new :latest.
+      # Without the worker line it would keep serving whatever image it launched with.
+      # These are no-ops while a service sits at desired_count = 0.
       - name: Deploy to ECS
         run: |
           aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --force-new-deployment --region ${{ env.AWS_REGION }}
+
+          # The worker service is newer than this workflow. Until `terraform apply`
+          # creates it, update-service would exit non-zero and fail the job *after*
+          # the API had already been redeployed — a red build on a half-applied
+          # deploy. Warn and continue instead; the next push picks it up.
+          WORKER_STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_WORKER_SERVICE }} \
+            --region ${{ env.AWS_REGION }} --query 'services[0].status' --output text 2>/dev/null || echo NONE)
+          if [ "$WORKER_STATUS" = "ACTIVE" ]; then
+            aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_WORKER_SERVICE }} --force-new-deployment --region ${{ env.AWS_REGION }}
+          else
+            echo "::warning::Worker service ${{ env.ECS_WORKER_SERVICE }} not found (status=$WORKER_STATUS). Run 'terraform apply' to create it; skipping its redeploy."
+          fi

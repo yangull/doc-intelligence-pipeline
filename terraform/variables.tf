@@ -15,13 +15,6 @@ variable "project_name" {
   type        = string
   default     = "doc-intelligence"
 }
-variable "api_key" {
-  description = "API key required by the app endpoints; empty disables auth"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
 variable "cors_allow_origins" {
   description = "Comma-separated list of allowed CORS origins; empty means wildcard"
   type        = string

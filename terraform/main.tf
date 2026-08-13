@@ -389,6 +389,21 @@ data "aws_ssm_parameter" "langfuse_public_key" {
 data "aws_ssm_parameter" "langfuse_secret_key" {
   name = "/doc-intelligence/langfuse-secret-key"
 }
+
+# The API key the app checks on the X-API-Key header. Kept out of variables and
+# .tfvars so it is never committed and never passed on the command line; ECS reads
+# it from SSM at container launch. Same pattern as the Langfuse keys (ADR-4).
+# Created out of band — see README.
+#
+# Caveat, and it is a real one: a data source decrypts by default, so the
+# resolved value is written into terraform.tfstate in plaintext. The state file is
+# gitignored and local-only, but it does mean the secret sits on disk. Reading the
+# parameter (rather than hand-building its ARN) buys a plan-time check that it
+# actually exists, which is worth the tradeoff here — a wrong ARN would otherwise
+# only surface as a container that will not start.
+data "aws_ssm_parameter" "api_key" {
+  name = "/doc-intelligence/${var.environment}/api-key"
+}
 # ============================================
 # FARGATE NETWORKING - look up the default VPC + subnets
 # ============================================
@@ -469,7 +484,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Extra inline policy: let ECS read the two SSM secrets at launch
+# Extra inline policy: let ECS read the SSM secrets at launch
 # (the managed policy above does NOT include SSM access)
 resource "aws_iam_role_policy" "ecs_execution_ssm" {
   name = "${var.project_name}-ecs-execution-ssm-${var.environment}"
@@ -482,11 +497,48 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
       Action = ["ssm:GetParameters"]
       Resource = [
         data.aws_ssm_parameter.langfuse_public_key.arn,
-        data.aws_ssm_parameter.langfuse_secret_key.arn
+        data.aws_ssm_parameter.langfuse_secret_key.arn,
+        data.aws_ssm_parameter.api_key.arn
       ]
     }]
   })
 }
+# ============================================
+# SHARED CONTAINER CONFIG
+# The API and the worker run the same image and both import app/core/config.py,
+# which refuses to start unless SQS_QUEUE_URL, BEDROCK_KB_ID and
+# BEDROCK_KB_DATA_SOURCE_ID are all set. Defined once so the two task
+# definitions cannot drift apart.
+# ============================================
+locals {
+  app_environment = [
+    { name = "APP_ENV", value = "production" },
+    { name = "S3_BUCKET_NAME", value = aws_s3_bucket.documents.bucket },
+    { name = "DYNAMODB_TABLE_NAME", value = aws_dynamodb_table.documents.name },
+    { name = "SQS_QUEUE_URL", value = aws_sqs_queue.documents.url },
+    { name = "BEDROCK_KB_ID", value = aws_bedrockagent_knowledge_base.documents.id },
+    { name = "BEDROCK_KB_DATA_SOURCE_ID", value = aws_bedrockagent_data_source.documents.data_source_id },
+    { name = "CORS_ALLOW_ORIGINS", value = var.cors_allow_origins }
+  ]
+
+  # Fetched from SSM by ECS at container launch and injected as env vars.
+  # "valueFrom" is the parameter ARN, not the value itself.
+  app_secrets = [
+    {
+      name      = "LANGFUSE_PUBLIC_KEY"
+      valueFrom = data.aws_ssm_parameter.langfuse_public_key.arn
+    },
+    {
+      name      = "LANGFUSE_SECRET_KEY"
+      valueFrom = data.aws_ssm_parameter.langfuse_secret_key.arn
+    },
+    {
+      name      = "API_KEY"
+      valueFrom = data.aws_ssm_parameter.api_key.arn
+    }
+  ]
+}
+
 # ============================================
 # ECS TASK DEFINITION - the blueprint for running our container
 # ============================================
@@ -517,31 +569,8 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
 
-      # Non-secret env vars — the app requires the queue/KB identifiers,
-      # so they are passed from the resources Terraform manages
-      environment = [
-        { name = "APP_ENV", value = "production" },
-        { name = "S3_BUCKET_NAME", value = aws_s3_bucket.documents.bucket },
-        { name = "DYNAMODB_TABLE_NAME", value = aws_dynamodb_table.documents.name },
-        { name = "SQS_QUEUE_URL", value = aws_sqs_queue.documents.url },
-        { name = "BEDROCK_KB_ID", value = aws_bedrockagent_knowledge_base.documents.id },
-        { name = "BEDROCK_KB_DATA_SOURCE_ID", value = aws_bedrockagent_data_source.documents.data_source_id },
-        { name = "API_KEY", value = var.api_key },
-        { name = "CORS_ALLOW_ORIGINS", value = var.cors_allow_origins }
-      ]
-
-      # Secrets: ECS fetches these from SSM at launch and injects as env vars.
-      # "valueFrom" is the SSM parameter ARN, not the value itself.
-      secrets = [
-        {
-          name      = "LANGFUSE_PUBLIC_KEY"
-          valueFrom = data.aws_ssm_parameter.langfuse_public_key.arn
-        },
-        {
-          name      = "LANGFUSE_SECRET_KEY"
-          valueFrom = data.aws_ssm_parameter.langfuse_secret_key.arn
-        }
-      ]
+      environment = local.app_environment
+      secrets     = local.app_secrets
 
       # Send container logs to the CloudWatch log group we created
       logConfiguration = {
@@ -572,6 +601,83 @@ resource "aws_ecs_service" "app" {
     assign_public_ip = true # no ALB — the task itself gets a public IP
   }
 }
+
+# ============================================
+# WORKER - same image, different command
+# Without this the SQS queue has no consumer in AWS: uploads land in S3, the
+# EventBridge rule enqueues them, and the message sits there until someone runs
+# `python -m app.worker.worker` on a laptop.
+# ============================================
+
+# No ingress block on purpose: the worker polls SQS outbound and accepts no
+# inbound traffic, so nothing should be able to reach it.
+resource "aws_security_group" "worker" {
+  name        = "${var.project_name}-worker-${var.environment}"
+  description = "No inbound; all outbound for the SQS worker"
+  vpc_id      = data.aws_vpc.default.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1" # all protocols
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_ecs_task_definition" "worker" {
+  family                   = "${var.project_name}-worker-${var.environment}"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "512"  # 0.5 vCPU — one blocking poll loop
+  memory                   = "1024" # 1 GB
+
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+  task_role_arn      = aws_iam_role.apprunner_instance.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "worker"
+      image     = "${aws_ecr_repository.app.repository_url}:latest"
+      essential = true
+
+      # Overrides the Dockerfile CMD, which starts uvicorn. Same image, so a
+      # single ECR push deploys both services.
+      command = ["python", "-m", "app.worker.worker"]
+
+      # No portMappings: nothing connects to the worker.
+
+      environment = local.app_environment
+      secrets     = local.app_secrets
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "worker" # separates worker logs from the API's
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "worker" {
+  name            = "${var.project_name}-worker-${var.environment}"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.worker.arn
+  desired_count   = 0 # same cost discipline as the API; scale up for a demo
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets         = data.aws_subnets.default.ids
+    security_groups = [aws_security_group.worker.id]
+    # Required, not cosmetic: the default VPC has an internet gateway but no NAT
+    # gateway, so without a public IP the task cannot reach SQS, S3, or Bedrock
+    # at all. The egress-only security group is what keeps it unreachable.
+    assign_public_ip = true
+  }
+}
+
 # ============================================
 # GITHUB ACTIONS OIDC - lets CI deploy without stored AWS keys
 # ============================================
