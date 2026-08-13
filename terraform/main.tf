@@ -140,6 +140,21 @@ resource "aws_cloudwatch_event_target" "new_document_sqs" {
 
 data "aws_caller_identity" "current" {}
 
+# The extraction model, named once. Used by three principals: the ECS task role (the
+# worker's Converse calls), the Knowledge Base role (parsing scanned PDFs at ingestion),
+# and the data source's parsing configuration.
+#
+# Two ARNs because it is a cross-region inference profile: the profile is what you call,
+# but Bedrock also checks the underlying foundation model in whichever region actually
+# serves the request — hence the wildcard region on the second.
+locals {
+  bedrock_model_arns = [
+    "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+  ]
+  bedrock_model_inference_profile_arn = local.bedrock_model_arns[0]
+}
+
 resource "aws_iam_role" "bedrock_kb" {
   name = "${var.project_name}-bedrock-kb-${var.environment}"
 
@@ -181,6 +196,15 @@ resource "aws_iam_role_policy" "bedrock_kb" {
         Resource = [
           "arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0"
         ]
+      },
+      {
+        # Required by the data source's foundation-model parsing configuration. Without
+        # it every ingestion fails with AccessDenied — the same failure mode as the
+        # bedrock:StartIngestionJob gap, and just as invisible until a real upload runs.
+        Sid      = "UseParsingModel"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = local.bedrock_model_arns
       },
       {
         Sid    = "S3VectorsReadWrite"
@@ -268,6 +292,24 @@ resource "aws_bedrockagent_data_source" "documents" {
         overlap_percentage = 20
       }
     }
+
+    # The default parser only reads a PDF's text layer, so a scanned document — a page
+    # that is just an image — indexes as nothing and is invisible to /query. The worker
+    # already reads those correctly, because Claude has vision; this gives the Knowledge
+    # Base the same eyes at ingestion time.
+    #
+    # Bedrock Data Automation would be the managed alternative, but it is Oregon-only and
+    # in preview, so a foundation model is the option in eu-west-1.
+    #
+    # Cost: billed per parsing-model token, once per document at ingestion, not per query
+    # — roughly $0.012 a page at current rates. Note AWS applies this parser to EVERY pdf
+    # in the data source, including text-only ones; it cannot be scoped to scans.
+    parsing_configuration {
+      parsing_strategy = "BEDROCK_FOUNDATION_MODEL"
+      bedrock_foundation_model_configuration {
+        model_arn = local.bedrock_model_inference_profile_arn
+      }
+    }
   }
 }
 
@@ -351,11 +393,8 @@ resource "aws_iam_role_policy" "apprunner_instance" {
         # both the profile ARN and the region-wildcarded model ARN are needed.
         Sid    = "BedrockInvoke"
         Effect = "Allow"
-        Action = ["bedrock:InvokeModel"]
-        Resource = [
-          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
-          "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
-        ]
+        Action   = ["bedrock:InvokeModel"]
+        Resource = local.bedrock_model_arns
       },
       {
         # Knowledge Base: vector retrieval for RAG + per-document ingestion

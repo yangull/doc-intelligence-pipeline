@@ -23,7 +23,7 @@ self-improvement blueprint):
 
 No fabricated metrics anywhere — every number must be reproducible from the harness.
 
-Status: corpus (6 documents), dataset (14 cases incl. 3 negatives), and the deterministic
+Status: corpus (8 documents), dataset (17 cases incl. 3 negatives), and the deterministic
 metrics (retrieval hit rate, citation accuracy, answer match, cited-nothing, latency, cost)
 are built. `generator()` now uses forced tool use so citation accuracy is distinct from
 retrieval hit rate. Still to do: faithfulness LLM-judge, CI gate, `EVALS.md`, dashboard,
@@ -98,21 +98,20 @@ Decisions 1–4 and 6 are **settled** (2026-08-13):
 2. **Settled — accepted permanently.** `trigger_kb_ingestion` sends no inline metadata;
    Bedrock rejects `IN_LINE_ATTRIBUTE` for S3-backed data sources, and the S3 key already
    carries the document id. No sidecar `.metadata.json` files.
-3. **Settled — dropped.** `invoice-scanned-lowquality.pdf` and its two cases are gone. No
-   foundation-model parser was enabled, so the pipeline still has **no OCR path**: a
-   scanned, image-only PDF will not index. Record this in `EVALS.md` as a known weakness.
-4. **Settled — dropped.** `contract-nda-mutual.pdf` and its case are gone. The cause was
-   never found (empty `statusReason`, identical bytes fail under a fresh S3 key), so this
-   is an unexplained content-specific indexing failure, not a fixed bug. Also worth an
-   `EVALS.md` note.
+3. **Settled — fixed, pending verification.** Foundation-model parsing is now configured on
+   the data source, so the Knowledge Base reads scanned PDFs with Claude's vision instead
+   of the text-only default parser. `invoice-scanned-lowquality.pdf` and its two cases are
+   restored. **Verify it actually reaches INDEXED** before treating this as closed.
 
-Still open:
-
-5. The baseline results file uses pre-rename keys (`abstention_rate`, `total_cost_usd`) and
-   the schema has diverged further (`errored_cases`, `error`, `expected_source_unindexed`).
-   It also describes the old 8-document corpus. Re-run for a clean baseline (28 Bedrock
-   calls, ~$0.10, no `--allow-unindexed` needed now), drop the old file, or keep it with a
-   note? Consider adding a `schema_version` field to harness output either way.
+   Note the pipeline was never fully blind to scans: extraction always worked, because the
+   worker sends the PDF to Claude directly. Only Knowledge Base indexing failed, so a
+   scanned invoice produced correct structured data in DynamoDB but could not be queried.
+4. **Reopened.** `contract-nda-mutual.pdf` and its case are restored to be re-tested under
+   the new parser. The original failure was never explained (empty `statusReason`, and
+   identical bytes under a fresh S3 key also failed). If it indexes now, the cause was the
+   default parser; if not, the mystery stands and it should be dropped again.
+5. **Settled — deleted.** The old baseline results file is gone; see the baseline note
+   above. A `schema_version` field on harness output is still worth adding.
 
 (Decision 6, commit strategy, is settled: split into the commits listed above.)
 
@@ -215,6 +214,16 @@ start without them. `tests/conftest.py` sets fake values so tests never need rea
 - CORS origins come from `CORS_ALLOW_ORIGINS` (comma-separated; empty = wildcard).
 - KB ingestion uses the `IngestKnowledgeBaseDocuments` API directly — no sidecar
   `metadata.json` files in S3, and no full data-source rescan.
+- **There are two independent "readers", and they have different capabilities.** The worker
+  sends the PDF to Claude, which has vision, so extraction handles scanned documents fine.
+  The Knowledge Base parses separately at ingestion; its default parser reads only a PDF's
+  text layer. That is why a scan could extract perfectly and still be unsearchable. The
+  data source now sets `parsing_configuration` to `BEDROCK_FOUNDATION_MODEL` so both use
+  Claude. Adding it **forces the data source to be replaced**, which changes
+  `BEDROCK_KB_DATA_SOURCE_ID`, wipes the index, and replaces both ECS task definitions —
+  update `.env` from `terraform output data_source_id` and re-ingest afterwards. The parser
+  applies to **every** PDF in the data source, not just scans, and is billed per token at
+  ingestion (~$0.012/page).
 - **The `IngestKnowledgeBaseDocuments` API authorizes against the IAM action
   `bedrock:StartIngestionJob`, not against an action of the same name.**
   `bedrock:IngestKnowledgeBaseDocuments` is not a real IAM action, so a policy listing

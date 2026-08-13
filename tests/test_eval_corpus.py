@@ -23,6 +23,11 @@ DATASET_PATH = Path(__file__).parent.parent / "eval" / "dataset.json"
 CASES = json.loads(DATASET_PATH.read_text())["cases"]
 ANSWERABLE = [c for c in CASES if c["answerable"]]
 
+# A raster scan on purpose, so pypdf finds nothing to check the dataset against. Its
+# expected values are verified by reading the image, not by text extraction. The
+# Knowledge Base reads it with a vision model at ingestion; this test file cannot.
+NO_TEXT_LAYER = {"invoice-scanned-lowquality.pdf"}
+
 
 def pdf_text(filename: str) -> str:
     reader = PdfReader(str(CORPUS_DIR / filename))
@@ -59,12 +64,14 @@ def test_negative_cases_are_still_unanswerable(case):
     # document is added that mentions it, abstention silently becomes the wrong
     # answer and the metric starts punishing a correct pipeline.
     #
-    # Every remaining document has a text layer, so extracted text covers the whole
-    # corpus. generate_corpus.py used to be folded into the haystack because the
-    # scanned invoice's content existed only as string literals there; that document
-    # is gone, so the extra false-alarm surface is no longer worth carrying.
+    # The haystack includes eval/generate_corpus.py as well as the extracted PDF text:
+    # the scanned invoice has no text layer, so its content exists only as string
+    # literals in that source — without it, one document would be invisible to this
+    # guard. If an absent term ever collides with unrelated code text, the test fails
+    # safe (a false alarm to investigate, not a blind spot).
     corpus = " ".join(pdf_text(p.name) for p in sorted(CORPUS_DIR.glob("*.pdf")))
-    haystack = harness.normalise(corpus)
+    generator_source = (CORPUS_DIR.parent / "generate_corpus.py").read_text()
+    haystack = harness.normalise(corpus + " " + generator_source)
     for term in case["absent_terms"]:
         assert harness.normalise(term) not in haystack, (
             f"{case['id']}: {term!r} now appears in the corpus, "
@@ -72,13 +79,23 @@ def test_negative_cases_are_still_unanswerable(case):
         )
 
 
-@pytest.mark.parametrize("case", ANSWERABLE, ids=lambda c: c["id"])
+@pytest.mark.parametrize(
+    "case", [c for c in ANSWERABLE if c["expected_source_filename"] not in NO_TEXT_LAYER],
+    ids=lambda c: c["id"],
+)
 def test_expected_values_appear_in_the_source_document(case):
     haystack = harness.normalise(pdf_text(case["expected_source_filename"]))
     for needle in case["expected_answer_contains"]:
         assert harness.normalise(needle) in haystack, (
             f"{case['id']}: {needle!r} is not in {case['expected_source_filename']}"
         )
+
+
+def test_scanned_document_really_has_no_text_layer():
+    # If this starts failing, the hard case has silently become an easy one and the
+    # parsing configuration is no longer being exercised by anything
+    for filename in NO_TEXT_LAYER:
+        assert pdf_text(filename).strip() == ""
 
 
 def test_corpus_contains_only_expected_files():
