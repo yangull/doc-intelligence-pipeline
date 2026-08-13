@@ -212,6 +212,14 @@ start without them. `tests/conftest.py` sets fake values so tests never need rea
 - CORS origins come from `CORS_ALLOW_ORIGINS` (comma-separated; empty = wildcard).
 - KB ingestion uses the `IngestKnowledgeBaseDocuments` API directly — no sidecar
   `metadata.json` files in S3, and no full data-source rescan.
+- **The `IngestKnowledgeBaseDocuments` API authorizes against the IAM action
+  `bedrock:StartIngestionJob`, not against an action of the same name.**
+  `bedrock:IngestKnowledgeBaseDocuments` is not a real IAM action, so a policy listing
+  only that grants nothing and every upload dies at the ingestion step with
+  `AccessDeniedException`. Both are listed in `aws_iam_role_policy.apprunner_instance`;
+  do not "tidy up" the seemingly redundant pair. This is invisible locally — local runs
+  use a broad IAM user, while the ECS task role is scoped to exact ARNs, so only a real
+  deployed upload reproduces it (found 2026-08-13, fixed in `9640936`).
 - Worker classifies failures as transient (return `"retry"`, message redelivered up to
   3 times then DLQ) vs permanent (return `"failed"`, message deleted); keep that
   distinction when touching `app/worker/`. `is_transient_error` in `extractor.py` is
