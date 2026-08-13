@@ -49,35 +49,33 @@ same axis as anything measured after 2026-08-13.
 
 ### Where things stand (end of session, 2026-08-13)
 
-**Four commits exist locally and are deliberately NOT pushed** — `main` is ahead of
-`origin/main` by 4, plus a batch of uncommitted working-tree changes (see below). Pre-commit
-hooks installed (ruff on commit, pytest on push).
+**The deployment gap is closed and verified.** The worker ECS service, SSM-backed API auth,
+and cited-only `/query` sources are applied and live. A PDF was uploaded through the
+deployed API and reached `COMPLETED` in 20 seconds **with no worker running locally**.
+Production upload works for the first time. Both services sit at `desired_count = 0`;
+nothing is billing.
 
-```
-c47ad85 Record session handoff in CLAUDE.md
-9210dbc Add eval harness for the query pipeline
-b29337d Return only the chunks the answer cites from the query pipeline
-0e8fc9f Fix KB ingestion rejected for S3-backed data sources
-```
+**START HERE NEXT SESSION.** One commit adds foundation-model parsing to the Knowledge Base
+so scanned PDFs become searchable. It is committed but **NOT applied**. Do these in order:
 
-**Pushing deploys** (`.github/workflows/deploy.yml` on push to `main`: ruff + pytest gate,
-then ECR build and `ecs update-service` for both services). The strongest reason to push
-soon is that **document upload is broken in production until `0e8fc9f` lands** — every PDF
-failed at the KB-ingestion step. Both ECS services sit at `desired_count = 0`, so a deploy
-updates service definitions and starts no task; there is no compute cost and the fix is not
-observable until someone scales up to demo. Do not push without asking.
+1. `cd terraform && terraform apply` — expect **3 add, 3 change, 3 destroy**. The data
+   source is *replaced*, not updated.
+2. **Update `BEDROCK_KB_DATA_SOURCE_ID` in `.env`** from `terraform output data_source_id`.
+   The replacement mints a new ID and the old one stops existing, so a stale `.env` breaks
+   the local worker silently.
+3. `uv run python -m eval.reset_corpus --yes` — destructive, needs the user. The apply
+   already wiped the KB index; this clears S3 and DynamoDB so there is one copy of each
+   document. **There is currently a duplicate** of `invoice-nordwind-2401.pdf` from the
+   end-to-end test, which would otherwise skew retrieval.
+4. Start the API and worker locally, then `uv run python -m eval.ingest_corpus`.
+5. `uv run python -m eval.ingest_corpus --verify-only`. **The assertion that matters:
+   does `invoice-scanned-lowquality.pdf` reach `INDEXED`?** That is the whole point of the
+   change. Also watch `contract-nda-mutual.pdf`, restored to be re-tested — if it still
+   fails, drop it and its case again.
+6. Only then run `uv run python -m eval.harness` for a fresh baseline (~$0.10).
 
-**The worker now has an ECS service, but it is not applied yet.** `terraform/main.tf`
-defines `aws_ecs_service.worker` / `aws_ecs_task_definition.worker` / a matching egress-only
-security group. Until `terraform apply` runs, AWS still has no SQS consumer, so an upload in
-production stays `PENDING` forever unless a laptop runs `python -m app.worker.worker`.
-Verified plan: **4 to add, 2 to change, 1 to destroy** — the destroy is
-`aws_ecs_task_definition.app` being *replaced*, which is normal (task definitions are
-immutable, so any edit registers a new revision). A destroy of the S3 bucket, DynamoDB
-table, SQS queue, or Knowledge Base would be the real stop signal.
-
-**The harness can now run clean.** `corpus_manifest.json` lists only the 6 INDEXED
-documents, so no `--allow-unindexed` is needed. A run is 28 Bedrock calls, roughly $0.10.
+The harness will refuse to run before step 4: the dataset references 8 documents while
+`corpus_manifest.json` still lists 6. That is expected, not a bug.
 
 All findings from three pre-commit review rounds are fixed. Hardening worth knowing about,
 because each was a real defect rather than a style change: `/query` returns 502 on a
