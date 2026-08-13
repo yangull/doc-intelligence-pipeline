@@ -101,12 +101,17 @@ def query_documents(request: QueryRequest):
         # clean 502 instead of a 500 with a stack trace
         raise HTTPException(status_code=502, detail="Model returned a malformed response")
 
+    # Only the chunks the answer actually cites, not everything retrieval returned.
+    # generator() already dropped out-of-range and non-integer indices, so an
+    # abstention yields no sources rather than five confident-looking ones.
+    chunks = result["retrieved_chunks"]
     sources = []
-    for i, chunk in enumerate(result["retrieved_chunks"]):
+    for index in result["cited_chunk_indices"]:
+        chunk = chunks[index - 1]  # cited_chunk_indices is 1-based
         uri = chunk.get("source", "")
         parts = uri.split("/")
         # S3 URI format: s3://bucket/uploads/{doc_id}/filename
-        doc_id = parts[4] if len(parts) >= 5 else f"source-{i}"
+        doc_id = parts[4] if len(parts) >= 5 else f"source-{index - 1}"
         sources.append(QuerySource(
             document_id=doc_id,
             excerpt=chunk["text"][:300],

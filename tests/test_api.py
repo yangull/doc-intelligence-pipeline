@@ -72,6 +72,7 @@ def test_query_parses_document_id_from_s3_uri(monkeypatch):
                 {"text": "total: 42", "source": "s3://bucket/uploads/doc-9/invoice.pdf"},
                 {"text": "no uri here", "source": ""},
             ],
+            "cited_chunk_indices": [1, 2],
         },
     )
     response = client.post("/api/v1/documents/query", json={"question": "What is the total?"})
@@ -80,6 +81,48 @@ def test_query_parses_document_id_from_s3_uri(monkeypatch):
     assert body["answer"] == "The total is 42."
     assert body["sources"][0]["document_id"] == "doc-9"
     assert body["sources"][1]["document_id"] == "source-1"
+
+
+def test_query_returns_only_the_chunks_the_answer_cites(monkeypatch):
+    # Retrieval always returns 5 chunks; reporting all of them as "sources"
+    # overstates what the answer was actually drawn from
+    monkeypatch.setattr(
+        documents, "run_query_pipeline",
+        lambda q: {
+            "answer": "890.00 EUR.",
+            "retrieved_chunks": [
+                {"text": "wrong invoice", "source": "s3://bucket/uploads/doc-1/a.pdf"},
+                {"text": "total: 890.00", "source": "s3://bucket/uploads/doc-2/b.pdf"},
+                {"text": "unrelated", "source": "s3://bucket/uploads/doc-3/c.pdf"},
+            ],
+            "cited_chunk_indices": [2],
+        },
+    )
+    response = client.post("/api/v1/documents/query", json={"question": "NW-2403 total?"})
+    assert response.status_code == 200
+    sources = response.json()["sources"]
+    assert len(sources) == 1
+    assert sources[0]["document_id"] == "doc-2"
+    assert sources[0]["excerpt"] == "total: 890.00"
+
+
+def test_query_returns_no_sources_when_the_model_cites_nothing(monkeypatch):
+    # Abstention: retrieval still returns its nearest neighbours, but the answer
+    # rests on none of them, so the response must not present them as sources
+    monkeypatch.setattr(
+        documents, "run_query_pipeline",
+        lambda q: {
+            "answer": "The excerpts do not contain that information.",
+            "retrieved_chunks": [
+                {"text": "some invoice", "source": "s3://bucket/uploads/doc-1/a.pdf"},
+                {"text": "another invoice", "source": "s3://bucket/uploads/doc-2/b.pdf"},
+            ],
+            "cited_chunk_indices": [],
+        },
+    )
+    response = client.post("/api/v1/documents/query", json={"question": "Siemens total?"})
+    assert response.status_code == 200
+    assert response.json()["sources"] == []
 
 
 def test_query_returns_502_on_malformed_model_response(monkeypatch):
