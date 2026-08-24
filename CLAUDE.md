@@ -23,11 +23,11 @@ self-improvement blueprint):
 
 No fabricated metrics anywhere — every number must be reproducible from the harness.
 
-Status: corpus (8 documents), dataset (17 cases incl. 3 negatives), and the deterministic
+Status: corpus (7 documents), dataset (16 cases incl. 3 negatives), and the deterministic
 metrics (retrieval hit rate, citation accuracy, answer match, cited-nothing, latency, cost)
 are built. `generator()` now uses forced tool use so citation accuracy is distinct from
-retrieval hit rate. Still to do: faithfulness LLM-judge, CI gate, `EVALS.md`, dashboard,
-and a fresh baseline on the 6-document corpus.
+retrieval hit rate. A fresh baseline exists (2026-08-24, see below). Still to do:
+faithfulness LLM-judge, CI gate, `EVALS.md`, dashboard.
 
 **Pricing is resolved (2026-08-13).** `eval/pricing.json` holds **$3.30 in / $16.50 out per
 1M tokens**. AWS publishes no rate for Sonnet 4.5 anywhere — not on the Bedrock pricing
@@ -38,44 +38,48 @@ net the charges to $0. Both divisions land on exact round numbers. **These are 1
 Anthropic first-party rates ($3/$15)** — the EU marketplace uplift — so never substitute
 first-party pricing. Full derivation is in the file's `source` field.
 
-**There is no current baseline.** The first run (2026-08-12) scored retrieval hit rate
-78.6%, citation accuracy 78.6%, answer match 78.6%, cited-nothing 100%, latency p50 5.07s /
-p95 5.87s — but it measured 17 cases over 8 documents, and its three misses were the cases
-whose documents never indexed. On comparable cases it was 11/11. The results file was
-**deleted** (recoverable via `git show`): it described a corpus that no longer exists and
-used pre-rename keys, so a new run scoring ~100% would look like a 21-point improvement
-that never happened. Record these numbers as history in `EVALS.md`; do not plot them on the
-same axis as anything measured after 2026-08-13.
+**Current baseline (2026-08-24), the first real one:** 16 cases over the 7-document corpus
+(after dropping `contract-nda-mutual.pdf` — see Decision 4). Retrieval hit rate 100%,
+citation accuracy 100%, answer match rate 100%, cited-nothing 100% (3 negatives), latency
+p50 5.179s / p95 5.985s, 23,969 tokens in / 1,522 out, cost $0.1042. Both scanned-invoice
+cases (`vogel-scan-total`, `vogel-scan-invoice-number`) pass end-to-end — retrieval and
+citation, not just KB indexing — confirming the foundation-model parser fix genuinely
+closes the loop. Results file: `eval/results/20260824T121954Z.json`.
 
-### Where things stand (end of session, 2026-08-13)
+The first-ever run (2026-08-12) scored 78.6% across the board on 17 cases over 8 documents;
+its three misses were the cases whose documents never indexed (on comparable cases it was
+11/11). That results file was **deleted** (recoverable via `git show`): it described a
+corpus that no longer exists and used pre-rename keys. Record both runs as history in
+`EVALS.md` when it's written; do not plot them on the same axis — the 2026-08-12 run and
+this one measured different corpora under different parsing configs.
 
-**The deployment gap is closed and verified.** The worker ECS service, SSM-backed API auth,
-and cited-only `/query` sources are applied and live. A PDF was uploaded through the
-deployed API and reached `COMPLETED` in 20 seconds **with no worker running locally**.
-Production upload works for the first time. Both services sit at `desired_count = 0`;
-nothing is billing.
+### Where things stand (as of 2026-08-24)
 
-**START HERE NEXT SESSION.** One commit adds foundation-model parsing to the Knowledge Base
-so scanned PDFs become searchable. It is committed but **NOT applied**. Do these in order:
+**The deployment gap is closed and verified** (2026-08-13). The worker ECS service,
+SSM-backed API auth, and cited-only `/query` sources are applied and live. A PDF was
+uploaded through the deployed API and reached `COMPLETED` in 20 seconds **with no worker
+running locally**. Production upload works for the first time. Both services sit at
+`desired_count = 0`; nothing is billing.
 
-1. `cd terraform && terraform apply` — expect **3 add, 3 change, 3 destroy**. The data
-   source is *replaced*, not updated.
-2. **Update `BEDROCK_KB_DATA_SOURCE_ID` in `.env`** from `terraform output data_source_id`.
-   The replacement mints a new ID and the old one stops existing, so a stale `.env` breaks
-   the local worker silently.
-3. `uv run python -m eval.reset_corpus --yes` — destructive, needs the user. The apply
-   already wiped the KB index; this clears S3 and DynamoDB so there is one copy of each
-   document. **There is currently a duplicate** of `invoice-nordwind-2401.pdf` from the
-   end-to-end test, which would otherwise skew retrieval.
-4. Start the API and worker locally, then `uv run python -m eval.ingest_corpus`.
-5. `uv run python -m eval.ingest_corpus --verify-only`. **The assertion that matters:
-   does `invoice-scanned-lowquality.pdf` reach `INDEXED`?** That is the whole point of the
-   change. Also watch `contract-nda-mutual.pdf`, restored to be re-tested — if it still
-   fails, drop it and its case again.
-6. Only then run `uv run python -m eval.harness` for a fresh baseline (~$0.10).
+**The foundation-model-parsing resume plan is fully complete (2026-08-24).** `terraform
+apply` ran (3 add, 3 change, 3 destroy, exactly as predicted — the data source was
+replaced; hit one snag along the way, the KB service role needed `bedrock:GetInferenceProfile`
+added alongside `bedrock:InvokeModel`, now in `main.tf`). New `BEDROCK_KB_DATA_SOURCE_ID`
+is `FQ3FQ3SPLZ`, written to `.env` (`BEDROCK_KB_ID` unchanged: `GTW9CRTHWL`). `reset_corpus
+--yes` purged S3/DynamoDB (10 objects, 22 items — the duplicate `invoice-nordwind-2401.pdf`
+turned out to be **3** copies, not 1). Corpus re-ingested, `invoice-scanned-lowquality.pdf`
+reached `INDEXED` (Decision 3, closed), `contract-nda-mutual.pdf` failed again and was
+dropped (Decision 4, closed — see below). Fresh baseline run: **100% across every metric**,
+see the baseline note above. Tests green (`tests/test_eval_corpus.py`, 20/20).
 
-The harness will refuse to run before step 4: the dataset references 8 documents while
-`corpus_manifest.json` still lists 6. That is expected, not a bug.
+**Nothing left from the resume plan. Next real task is the "Still to do" list above** —
+the faithfulness LLM-judge is the natural starting point (design it via `grill-with-docs`
+first; it's genuinely undesigned, unlike the resume steps were).
+
+**Housekeeping before the next session:** this session's changes are uncommitted —
+`CLAUDE.md`, `terraform/main.tf`, the four NDA-drop files, and the new results file under
+`eval/results/`. Commit before moving on to new work, so a fresh session doesn't inherit a
+dirty working tree.
 
 All findings from three pre-commit review rounds are fixed. Hardening worth knowing about,
 because each was a real defect rather than a style change: `/query` returns 502 on a
@@ -89,25 +93,26 @@ blanks Langfuse credentials so pytest cannot ship traces to the real project (ru
 
 ### Open decisions
 
-Decisions 1–4 and 6 are **settled** (2026-08-13):
+Decisions 1, 2, 5, and 6 settled 2026-08-13; decisions 3 and 4 settled 2026-08-24:
 
 1. **Settled — fixed.** `/query` now builds `sources` from `cited_chunk_indices`, so an
    abstention returns `sources: []` instead of five confident-looking chunks.
 2. **Settled — accepted permanently.** `trigger_kb_ingestion` sends no inline metadata;
    Bedrock rejects `IN_LINE_ATTRIBUTE` for S3-backed data sources, and the S3 key already
    carries the document id. No sidecar `.metadata.json` files.
-3. **Settled — fixed, pending verification.** Foundation-model parsing is now configured on
-   the data source, so the Knowledge Base reads scanned PDFs with Claude's vision instead
-   of the text-only default parser. `invoice-scanned-lowquality.pdf` and its two cases are
-   restored. **Verify it actually reaches INDEXED** before treating this as closed.
+3. **Settled — fixed and verified (2026-08-24).** Foundation-model parsing is configured on
+   the data source, and `invoice-scanned-lowquality.pdf` reached `INDEXED` after the
+   post-`terraform apply` re-ingest. Closed — no further verification needed.
 
    Note the pipeline was never fully blind to scans: extraction always worked, because the
    worker sends the PDF to Claude directly. Only Knowledge Base indexing failed, so a
    scanned invoice produced correct structured data in DynamoDB but could not be queried.
-4. **Reopened.** `contract-nda-mutual.pdf` and its case are restored to be re-tested under
-   the new parser. The original failure was never explained (empty `statusReason`, and
-   identical bytes under a fresh S3 key also failed). If it indexes now, the cause was the
-   default parser; if not, the mystery stands and it should be dropped again.
+4. **Settled — drop it again (2026-08-24).** Re-tested under the new parser and it failed
+   the same way: `statusReason` empty, no explanation. That rules out "the old default
+   parser was the cause." The original mystery from 2026-08-13 (identical bytes under a
+   fresh S3 key also failed) stands unexplained. Per the pre-agreed contingency, drop the
+   document and its case — see the resume steps above. Worth a line in `EVALS.md` once
+   that file exists: one content-specific indexing failure with no known cause.
 5. **Settled — deleted.** The old baseline results file is gone; see the baseline note
    above. A `schema_version` field on harness output is still worth adding.
 
