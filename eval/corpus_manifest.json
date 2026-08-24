@@ -1,37 +1,43 @@
 {
   "contract-consulting-services.pdf": {
-    "document_id": "5cdf658f-b550-4b3c-a6c0-85800760fc64",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/5cdf658f-b550-4b3c-a6c0-85800760fc64/contract-consulting-services.pdf",
+    "document_id": "be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b",
+    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf",
     "status": "COMPLETED",
     "kb_status": "INDEXED"
   },
   "invoice-kranich-2402.pdf": {
-    "document_id": "f7925f8a-3684-4841-bd38-eea926d88013",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/f7925f8a-3684-4841-bd38-eea926d88013/invoice-kranich-2402.pdf",
+    "document_id": "0ba026d9-64e4-4260-a722-2487d194befb",
+    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
     "status": "COMPLETED",
     "kb_status": "INDEXED"
   },
   "invoice-nordwind-2401.pdf": {
-    "document_id": "059e8a4e-726e-40eb-a975-1285cd0e1cc8",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/059e8a4e-726e-40eb-a975-1285cd0e1cc8/invoice-nordwind-2401.pdf",
+    "document_id": "56727684-8d70-4ecd-8ee6-6b861ec84525",
+    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
     "status": "COMPLETED",
     "kb_status": "INDEXED"
   },
   "invoice-nordwind-2403.pdf": {
-    "document_id": "87a4d3c1-89f4-4e36-926d-d06a20f1234b",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/87a4d3c1-89f4-4e36-926d-d06a20f1234b/invoice-nordwind-2403.pdf",
+    "document_id": "29fb2f37-f75a-49c3-9a8e-20450baaeb5e",
+    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+    "status": "COMPLETED",
+    "kb_status": "INDEXED"
+  },
+  "invoice-scanned-lowquality.pdf": {
+    "document_id": "4117cd98-d9fb-4feb-be76-f7eaa8860c38",
+    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
     "status": "COMPLETED",
     "kb_status": "INDEXED"
   },
   "receipt-office-supplies.pdf": {
-    "document_id": "38d5fc95-dafb-4d9a-88a2-f20d846dcb49",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/38d5fc95-dafb-4d9a-88a2-f20d846dcb49/receipt-office-supplies.pdf",
+    "document_id": "7d3a1621-647f-47d0-a835-5e9547888c22",
+    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/7d3a1621-647f-47d0-a835-5e9547888c22/receipt-office-supplies.pdf",
     "status": "COMPLETED",
     "kb_status": "INDEXED"
   },
   "report-q3-summary.pdf": {
-    "document_id": "5797d1d7-1d43-4e69-bda1-5b9c14193fb2",
-    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/5797d1d7-1d43-4e69-bda1-5b9c14193fb2/report-q3-summary.pdf",
+    "document_id": "7803c7ce-814f-4a65-a99f-b6ad7fa2ae91",
+    "s3_uri": "s3://doc-intelligence-documents-dev/uploads/7803c7ce-814f-4a65-a99f-b6ad7fa2ae91/report-q3-summary.pdf",
     "status": "COMPLETED",
     "kb_status": "INDEXED"
   }

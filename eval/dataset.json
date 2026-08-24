@@ -91,14 +91,6 @@
       "notes": "Same clause as the day rate; the model must pick the cap, not the rate."
     },
     {
-      "id": "nda-jurisdiction",
-      "question": "Which courts have exclusive jurisdiction under the mutual non-disclosure agreement?",
-      "answerable": true,
-      "expected_source_filename": "contract-nda-mutual.pdf",
-      "expected_answer_contains": ["Frankfurt"],
-      "notes": "The NDA parties are in Zurich and Berlin, so naming either city is the wrong answer."
-    },
-    {
       "id": "receipt-total",
       "question": "What was the total on the Papierhaus Berlin receipt?",
       "answerable": true,

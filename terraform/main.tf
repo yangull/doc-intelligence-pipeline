@@ -201,9 +201,12 @@ resource "aws_iam_role_policy" "bedrock_kb" {
         # Required by the data source's foundation-model parsing configuration. Without
         # it every ingestion fails with AccessDenied — the same failure mode as the
         # bedrock:StartIngestionJob gap, and just as invisible until a real upload runs.
+        # bedrock:GetInferenceProfile is a second, separate action the KB service calls
+        # to resolve the inference profile before it can invoke it; missing it fails
+        # data source *creation* itself with ValidationException, before any ingestion.
         Sid      = "UseParsingModel"
         Effect   = "Allow"
-        Action   = ["bedrock:InvokeModel"]
+        Action   = ["bedrock:InvokeModel", "bedrock:GetInferenceProfile"]
         Resource = local.bedrock_model_arns
       },
       {

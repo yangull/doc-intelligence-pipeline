@@ -1,0 +1,509 @@
+{
+  "run_at": "2026-08-24T12:19:54.869670+00:00",
+  "pricing": {
+    "_comment": "Bedrock on-demand token rates for the model in BEDROCK_MODEL_ID, in USD per 1,000,000 tokens. Derived from real billed usage, not from a pricing page: the public Bedrock pricing page has no Sonnet 4.5 entry and the AWS Price List API publishes no Anthropic SKUs for eu-west-1, so Cost Explorer against actual usage is the only traceable source. See `source` for the exact derivation.",
+    "model_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "region": "eu-west-1",
+    "input_per_1m_usd": 3.3,
+    "output_per_1m_usd": 16.5,
+    "source": "AWS Cost Explorer, account 549116506173, service 'Claude Sonnet 4.5 (Amazon Bedrock Edition)', RECORD_TYPE=Usage, June 2026. Usage type EU-MP:EU_InputTokenCount-Units: $0.2514501 over 0.076197 Units (millions of tokens) = $3.3000000000/1M. Usage type EU-MP:EU_OutputTokenCount-Units: $0.1509585 over 0.009149 Units = $16.5000000000/1M. Both divisions land on exact round figures, so these are the published rates rather than an artifact of rounding. Note these are 1.10x the Anthropic first-party rates ($3/$15) -- the EU marketplace uplift -- so first-party pricing must not be substituted here.",
+    "checked_on": "2026-08-13"
+  },
+  "summary": {
+    "cases": 16,
+    "answerable_cases": 13,
+    "negative_cases": 3,
+    "errored_cases": 0,
+    "retrieval_hit_rate": 1.0,
+    "citation_accuracy": 1.0,
+    "answer_match_rate": 1.0,
+    "cited_nothing_rate": 1.0,
+    "latency_seconds": {
+      "p50": 5.179,
+      "p95": 5.985,
+      "mean": 5.331
+    },
+    "input_tokens": 23969,
+    "output_tokens": 1522,
+    "llm_token_cost_usd": 0.104212,
+    "cost_excludes": "retriever query embedding (billed separately, not reported by the retrieve API) and any tokens an errored case burned before it failed",
+    "cost_unavailable_reason": null
+  },
+  "results": [
+    {
+      "id": "nordwind-jan-total",
+      "question": "What is the total due on Nordwind invoice NW-2401?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+      "answer": "The total due on Nordwind invoice NW-2401 is 1,240.00 EUR.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf"
+      ],
+      "cited_chunk_indices": [
+        2
+      ],
+      "token_usage": {
+        "input_tokens": 1387,
+        "output_tokens": 99
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.985,
+      "llm_token_cost_usd": 0.006211,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "nordwind-mar-total",
+      "question": "What is the total due on Nordwind invoice NW-2403?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+      "answer": "The total due on Nordwind invoice NW-2403 is 890.00 EUR.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1387,
+        "output_tokens": 97
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.049,
+      "llm_token_cost_usd": 0.006178,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "nordwind-disambiguate-antwerp",
+      "question": "Which Nordwind invoice covers freight forwarding to Antwerp? Give the invoice number.",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+      "answer": "NW-2403",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "cited_chunk_indices": [
+        2
+      ],
+      "token_usage": {
+        "input_tokens": 1428,
+        "output_tokens": 80
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.179,
+      "llm_token_cost_usd": 0.006032,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "nordwind-jan-storage-line",
+      "question": "How much did Nordwind charge for warehouse storage on invoice NW-2401?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+      "answer": "Nordwind charged 176.52 EUR for warehouse storage (12 days) on invoice NW-2401.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1426,
+        "output_tokens": 102
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.89,
+      "llm_token_cost_usd": 0.006389,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "kranich-currency",
+      "question": "What currency is the Kranich Software invoice issued in?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+      "answer": "The Kranich Software invoice is issued in GBP (British Pounds).",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1379,
+        "output_tokens": 84
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.131,
+      "llm_token_cost_usd": 0.005937,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "kranich-vat-rate",
+      "question": "What VAT rate is applied on the Kranich Software invoice?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+      "answer": "The VAT rate applied on the Kranich Software invoice is 20%.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1577,
+        "output_tokens": 90
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.071,
+      "llm_token_cost_usd": 0.006689,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "vogel-scan-total",
+      "question": "What is the total due on the Vogel Druck invoice?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+      "answer": "The total due on the Vogel Druck invoice is 216.46 EUR.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1385,
+        "output_tokens": 91
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 4.86,
+      "llm_token_cost_usd": 0.006072,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "vogel-scan-invoice-number",
+      "question": "What is the invoice number on the Vogel Druck invoice?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+      "answer": "VD-2405",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1385,
+        "output_tokens": 78
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.251,
+      "llm_token_cost_usd": 0.005857,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "consulting-notice-period",
+      "question": "How much notice must a party give to terminate the consulting services agreement?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf",
+      "answer": "A party must give 60 days written notice to terminate the consulting services agreement.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1867,
+        "output_tokens": 87
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 4.858,
+      "llm_token_cost_usd": 0.007597,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "consulting-day-rate",
+      "question": "What is the day rate under the consulting services agreement?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf",
+      "answer": "The day rate under the consulting services agreement is EUR 950 per consultant day, exclusive of VAT.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/7d3a1621-647f-47d0-a835-5e9547888c22/receipt-office-supplies.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1817,
+        "output_tokens": 99
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.664,
+      "llm_token_cost_usd": 0.00763,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "consulting-fee-cap",
+      "question": "What is the maximum total in fees payable during the initial term of the consulting agreement?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf",
+      "answer": "EUR 76,000",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1716,
+        "output_tokens": 88
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 5.291,
+      "llm_token_cost_usd": 0.007115,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "receipt-total",
+      "question": "What was the total on the Papierhaus Berlin receipt?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/7d3a1621-647f-47d0-a835-5e9547888c22/receipt-office-supplies.pdf",
+      "answer": "The total on the Papierhaus Berlin receipt was 47.60 EUR.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/7d3a1621-647f-47d0-a835-5e9547888c22/receipt-office-supplies.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/7d3a1621-647f-47d0-a835-5e9547888c22/receipt-office-supplies.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1337,
+        "output_tokens": 90
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 3.876,
+      "llm_token_cost_usd": 0.005897,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "report-headcount",
+      "question": "How many employees were there at the end of Q3?",
+      "answerable": true,
+      "expected_source": "s3://doc-intelligence-documents-dev/uploads/7803c7ce-814f-4a65-a99f-b6ad7fa2ae91/report-q3-summary.pdf",
+      "answer": "48 employees",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/7803c7ce-814f-4a65-a99f-b6ad7fa2ae91/report-q3-summary.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/7d3a1621-647f-47d0-a835-5e9547888c22/receipt-office-supplies.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf"
+      ],
+      "citations": [
+        "s3://doc-intelligence-documents-dev/uploads/7803c7ce-814f-4a65-a99f-b6ad7fa2ae91/report-q3-summary.pdf"
+      ],
+      "cited_chunk_indices": [
+        1
+      ],
+      "token_usage": {
+        "input_tokens": 1789,
+        "output_tokens": 87
+      },
+      "error": null,
+      "retrieval_hit": true,
+      "citation_hit": true,
+      "answer_match": true,
+      "cited_nothing": null,
+      "latency_seconds": 4.987,
+      "llm_token_cost_usd": 0.007339,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "negative-unknown-vendor",
+      "question": "What is the total on the Siemens invoice?",
+      "answerable": false,
+      "expected_source": null,
+      "answer": "The excerpts do not contain a Siemens invoice. The invoices shown are from Nordwind Logistik GmbH and Vogel Druck & Medien.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/4117cd98-d9fb-4feb-be76-f7eaa8860c38/invoice-scanned-lowquality.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf"
+      ],
+      "citations": [],
+      "cited_chunk_indices": [],
+      "token_usage": {
+        "input_tokens": 1379,
+        "output_tokens": 109
+      },
+      "error": null,
+      "retrieval_hit": null,
+      "citation_hit": null,
+      "answer_match": null,
+      "cited_nothing": true,
+      "latency_seconds": 5.564,
+      "llm_token_cost_usd": 0.006349,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "negative-unrelated-topic",
+      "question": "What is the company's employee stock option policy?",
+      "answerable": false,
+      "expected_source": null,
+      "answer": "The excerpts do not contain information about any company's employee stock option policy.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/0ba026d9-64e4-4260-a722-2487d194befb/invoice-kranich-2402.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/7d3a1621-647f-47d0-a835-5e9547888c22/receipt-office-supplies.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/be9d4a1d-b5d2-48eb-95ac-fc47c68ad43b/contract-consulting-services.pdf"
+      ],
+      "citations": [],
+      "cited_chunk_indices": [],
+      "token_usage": {
+        "input_tokens": 1482,
+        "output_tokens": 96
+      },
+      "error": null,
+      "retrieval_hit": null,
+      "citation_hit": null,
+      "answer_match": null,
+      "cited_nothing": true,
+      "latency_seconds": 5.033,
+      "llm_token_cost_usd": 0.006475,
+      "expected_source_unindexed": false
+    },
+    {
+      "id": "negative-plausible-but-absent",
+      "question": "How much did Nordwind charge for air freight in December 2023?",
+      "answerable": false,
+      "expected_source": null,
+      "answer": "The excerpts do not contain information about air freight charges in December 2023. The provided invoices are from January 2024 (NW-2401) and March 2024 (NW-2403), and they show freight forwarding services by sea/land (Hamburg to Rotterdam and Hamburg to Antwerp), not air freight services.",
+      "retrieved_sources": [
+        "s3://doc-intelligence-documents-dev/uploads/29fb2f37-f75a-49c3-9a8e-20450baaeb5e/invoice-nordwind-2403.pdf",
+        "s3://doc-intelligence-documents-dev/uploads/56727684-8d70-4ecd-8ee6-6b861ec84525/invoice-nordwind-2401.pdf"
+      ],
+      "citations": [],
+      "cited_chunk_indices": [],
+      "token_usage": {
+        "input_tokens": 1228,
+        "output_tokens": 145
+      },
+      "error": null,
+      "retrieval_hit": null,
+      "citation_hit": null,
+      "answer_match": null,
+      "cited_nothing": true,
+      "latency_seconds": 7.613,
+      "llm_token_cost_usd": 0.006445,
+      "expected_source_unindexed": false
+    }
+  ]
+}

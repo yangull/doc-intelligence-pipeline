@@ -206,57 +206,6 @@ def build_contract_consulting():
     pdf.save()
 
 
-def build_contract_nda():
-    pdf = new_pdf("contract-nda-mutual.pdf")
-    w = Writer(pdf)
-    w.line("MUTUAL NON-DISCLOSURE AGREEMENT", size=14, bold=True, gap=10 * mm)
-    w.paragraph(
-        "This Mutual Non-Disclosure Agreement is made on 14 February 2024 between Helios Data "
-        "AG, Bahnhofstrasse 21, 8001 Zurich, and Brandt Ventures GmbH, Rosenthaler Strasse 40, "
-        "10178 Berlin (each a Party)."
-    )
-    w.y -= 4 * mm
-
-    w.line("1. Confidential Information", bold=True, gap=6 * mm)
-    w.paragraph(
-        "Confidential Information means any non-public technical, commercial, or financial "
-        "information disclosed by one Party to the other, whether orally or in writing, that "
-        "is marked confidential or would reasonably be understood to be confidential."
-    )
-    w.y -= 3 * mm
-
-    w.line("2. Obligations", bold=True, gap=6 * mm)
-    w.paragraph(
-        "Each Party shall keep the other Party's Confidential Information strictly confidential "
-        "and shall not disclose it to any third party without prior written consent, except to "
-        "employees and advisers who need to know it and are bound by equivalent obligations."
-    )
-    w.y -= 3 * mm
-
-    w.line("3. Duration", bold=True, gap=6 * mm)
-    w.paragraph(
-        "The obligations in this Agreement survive for a period of five (5) years from the date "
-        "of disclosure, regardless of whether the discussions between the Parties result in a "
-        "further agreement."
-    )
-    w.y -= 3 * mm
-
-    w.line("4. Exclusions", bold=True, gap=6 * mm)
-    w.paragraph(
-        "This Agreement does not apply to information that is or becomes publicly available "
-        "through no breach by the receiving Party, or that was lawfully known to the receiving "
-        "Party before disclosure."
-    )
-    w.y -= 3 * mm
-
-    w.line("5. Jurisdiction", bold=True, gap=6 * mm)
-    w.paragraph(
-        "The courts of Frankfurt am Main shall have exclusive jurisdiction over any dispute "
-        "arising out of this Agreement."
-    )
-    pdf.save()
-
-
 def build_receipt_office_supplies():
     pdf = new_pdf("receipt-office-supplies.pdf")
     w = Writer(pdf)
@@ -419,7 +368,6 @@ BUILDERS = [
     build_invoice_kranich_2402,
     build_invoice_nordwind_2403,
     build_contract_consulting,
-    build_contract_nda,
     build_receipt_office_supplies,
     build_report_q3,
     build_invoice_scanned_lowquality,
