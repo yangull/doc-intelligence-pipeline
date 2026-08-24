@@ -76,10 +76,12 @@ see the baseline note above. Tests green (`tests/test_eval_corpus.py`, 20/20).
 the faithfulness LLM-judge is the natural starting point (design it via `grill-with-docs`
 first; it's genuinely undesigned, unlike the resume steps were).
 
-**Housekeeping before the next session:** this session's changes are uncommitted —
-`CLAUDE.md`, `terraform/main.tf`, the four NDA-drop files, and the new results file under
-`eval/results/`. Commit before moving on to new work, so a fresh session doesn't inherit a
-dirty working tree.
+**Committed (2026-08-24), working tree clean:** three commits — `96a2b29` (IAM fix + NDA
+drop + baseline), `9501d88` (this doc), `4dfc535` (`docs/agents/issue-tracker.md`, added so
+`mattpocock-skills:code-review`'s Spec axis has something to read — not part of the
+original resume plan; that review flagged it as scope creep, correctly, but it's low-risk
+and worth keeping). A `mattpocock-skills:code-review` run against `ff004c5` found nothing
+blocking on either axis.
 
 All findings from three pre-commit review rounds are fixed. Hardening worth knowing about,
 because each was a real defect rather than a style change: `/query` returns 502 on a
